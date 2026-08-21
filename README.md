@@ -29,7 +29,7 @@
 - 前端：React + TypeScript + Vite
 - 后端、数据库、登录与文件存储：Supabase 免费版
 - 代码托管：GitHub
-- 网站部署：Vercel 免费版
+- 网站部署：GitHub Pages（推荐，无需新账号或手机号）
 
 ## 第一次上线
 
@@ -72,16 +72,18 @@ git push -u origin main
 
 如果上级工作目录已经是另一个 Git 仓库，请在 GitHub Desktop 中把“学生展示界面”作为独立仓库添加，避免提交其他工作文件。
 
-### 5. 部署到 Vercel
+### 5. 部署到 GitHub Pages
 
-1. 打开 [Vercel](https://vercel.com/)，使用 GitHub 账号注册。
-2. 点击 `Add New → Project`，导入刚刚创建的 GitHub 仓库。
-3. Framework Preset 选择 `Vite`，构建命令和输出目录保持自动识别。
-4. 在 `Environment Variables` 添加：
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_PUBLISHABLE_KEY`
-5. 点击 Deploy。完成后会获得免费的 `*.vercel.app` 网址。
-6. 把该网址发给家长即可。以后推送 GitHub，Vercel 会自动重新部署。
+1. 打开 GitHub 仓库的 `Settings → Secrets and variables → Actions`。
+2. 点击 `New repository secret`，分别添加：
+   - `VITE_SUPABASE_URL`：Supabase Project URL
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`：Supabase Publishable key
+3. 进入 `Settings → Pages`。
+4. 在 `Build and deployment → Source` 中选择 `GitHub Actions`。
+5. 打开仓库的 `Actions` 页面，选择 `Deploy to GitHub Pages`，点击 `Run workflow`；之后每次推送代码都会自动重新部署。
+6. 发布成功后的网址为 `https://tomai001.github.io/myStudent/`。
+
+项目使用 Hash 路由以兼容 GitHub Pages。家长打开的学生页面链接会包含 `/#/`，这是正常现象。
 
 ## 推荐录入顺序
 
