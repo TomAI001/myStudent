@@ -782,6 +782,18 @@ colors = [<span class="str">"red"</span>,<span class="str">"yellow"</span>,<span
         points
       },window.location.origin);
     }
+    function reportCoursewareProgress(currentSlide,totalSlides,chapter){
+      if(window.parent===window)return;
+      window.parent.postMessage({
+        type:'growth-courseware:progress',
+        lessonId:'lesson-1',
+        currentSlide,
+        totalSlides,
+        chapter,
+        percent:Math.round(currentSlide/totalSlides*100),
+        completed:currentSlide===totalSlides
+      },window.location.origin);
+    }
 
     /* === SLIDE PRESENTATION CONTROLLER === */
     class SlidePresentation {
@@ -822,6 +834,7 @@ colors = [<span class="str">"red"</span>,<span class="str">"yellow"</span>,<span
         $$('.chapter-dot').forEach((d,n)=>d.classList.toggle('active',n===chapter));
         if(updateHash) history.replaceState(null,'',`#${this.current+1}`);
         drawSlideCanvases(this.slides[this.current]);
+        reportCoursewareProgress(this.current+1,this.slides.length,chapter);
       }
       next(){this.show(this.current+1)} prev(){this.show(this.current-1)}
     }

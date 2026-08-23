@@ -10,6 +10,15 @@ export interface StudentSession {
 export interface StudentProgress {
   points: number
   answeredQuestionIds: string[]
+  completedLessonIds: string[]
+  lessonProgress: Record<string, LessonProgress>
+}
+
+export interface LessonProgress {
+  currentSlide: number
+  totalSlides: number
+  percent: number
+  completed: boolean
 }
 import { getStudentAccount } from './studentLearningStore'
 
@@ -35,17 +44,51 @@ export function logoutStudent() {
 export function getStudentProgress(studentId: string): StudentProgress {
   try {
     const all = JSON.parse(window.localStorage.getItem(STUDENT_PROGRESS_KEY) || '{}') as Record<string, StudentProgress>
-    return all[studentId] || { points: 120, answeredQuestionIds: [] }
-  } catch { return { points: 120, answeredQuestionIds: [] } }
+    const saved = all[studentId]
+    return {
+      points: saved?.points ?? 120,
+      answeredQuestionIds: saved?.answeredQuestionIds ?? [],
+      completedLessonIds: saved?.completedLessonIds ?? [],
+      lessonProgress: saved?.lessonProgress ?? {},
+    }
+  } catch { return { points: 120, answeredQuestionIds: [], completedLessonIds: [], lessonProgress: {} } }
 }
 
 export function awardQuestionPoints(studentId: string, questionId: string, points: number): StudentProgress {
   let all: Record<string, StudentProgress> = {}
   try { all = JSON.parse(window.localStorage.getItem(STUDENT_PROGRESS_KEY) || '{}') }
   catch { all = {} }
-  const current = all[studentId] || { points: 120, answeredQuestionIds: [] }
+  const current = getStudentProgress(studentId)
   if (current.answeredQuestionIds.includes(questionId)) return current
   const next = { points: current.points + Math.max(0, points), answeredQuestionIds: [...current.answeredQuestionIds, questionId] }
+  all[studentId] = { ...current, ...next }
+  window.localStorage.setItem(STUDENT_PROGRESS_KEY, JSON.stringify(all))
+  return all[studentId]
+}
+
+export function saveLessonProgress(studentId: string, lessonId: string, currentSlide: number, totalSlides: number, completed: boolean) {
+  let all: Record<string, StudentProgress> = {}
+  try { all = JSON.parse(window.localStorage.getItem(STUDENT_PROGRESS_KEY) || '{}') }
+  catch { all = {} }
+  const current = getStudentProgress(studentId)
+  const safeTotal = Math.max(1, totalSlides)
+  const safeCurrent = Math.min(safeTotal, Math.max(currentSlide, current.lessonProgress[lessonId]?.currentSlide ?? 1))
+  const isCompleted = completed || current.completedLessonIds.includes(lessonId)
+  const next: StudentProgress = {
+    ...current,
+    completedLessonIds: isCompleted && !current.completedLessonIds.includes(lessonId)
+      ? [...current.completedLessonIds, lessonId]
+      : current.completedLessonIds,
+    lessonProgress: {
+      ...current.lessonProgress,
+      [lessonId]: {
+        currentSlide: safeCurrent,
+        totalSlides: safeTotal,
+        percent: isCompleted ? 100 : Math.round(safeCurrent / safeTotal * 100),
+        completed: isCompleted,
+      },
+    },
+  }
   all[studentId] = next
   window.localStorage.setItem(STUDENT_PROGRESS_KEY, JSON.stringify(all))
   return next
@@ -55,7 +98,6 @@ export const demoClass = {
   id: 'python-summer',
   name: 'Python 创意编程暑期班',
   teacher: 'Tom 老师',
-  progress: 0,
   totalLessons: 7,
 }
 
