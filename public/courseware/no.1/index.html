@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Python 暑假第一课：海龟探险队</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Space+Mono:wght@400;700&family=Tektur:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    /* === THEME TOKENS === */
+    :root {
+      --stage-bg: #05081a;
+      --slide-bg: #0a0e27;
+      --void: #0a0e27;
+      --navy: #0f1b3d;
+      --cyan: #5edcf4;
+      --pink: #f0a6ca;
+      --yellow: #f4d03f;
+      --lavender: #e2d5f2;
+      --white: #ffffff;
+      --ink: #0f1b3d;
+      --ease: cubic-bezier(.16, 1, .3, 1);
+    }
+
+    /* === FIXED 16:9 STAGE: MANDATORY BASE STYLES === */
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--stage-bg, #000);
+    }
+    .deck-viewport {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      background: var(--stage-bg, #000);
+    }
+    .deck-stage {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      transform-origin: 0 0;
+      background: var(--slide-bg, #fff);
+    }
+    .slide {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      display: block;
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      background: var(--slide-bg, #fff);
+    }
+    .slide.active,
+    .slide.visible {
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+      z-index: 1;
+    }
+    img,
+    video,
+    canvas,
+    svg {
+      max-width: 100%;
+      max-height: 100%;
+    }
+    .deck-controls {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%);
+      z-index: 1000;
+    }
+    @media print {
+      html,
+      body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+      .deck-viewport { position: static; overflow: visible; background: #fff; }
+      .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+      .slide { position: relative; display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; width: 1920px; height: 1080px; break-after: page; page-break-after: always; }
+      .slide:last-child { break-after: auto; page-break-after: auto; }
+      .deck-controls, .score-hud, .chapter-rail, .stage-footer, .edit-hotzone, .edit-toggle, .edit-panel { display: none !important; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .2s !important; }
+    }
+
+    /* === GLOBAL PRESENTATION STYLES === */
+    * { box-sizing: border-box; }
+    body { cursor: crosshair; font-family: 'Noto Sans SC', sans-serif; }
+    button, input, a { font: inherit; }
+    button, a { cursor: pointer; }
+    .slide {
+      color: var(--white);
+      background-color: var(--void);
+      background-image:
+        linear-gradient(rgba(94,220,244,.075) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(94,220,244,.075) 2px, transparent 2px),
+        radial-gradient(circle at 78% 38%, rgba(44,76,164,.45), transparent 38%);
+      background-size: 40px 40px, 40px 40px, auto;
+      transition: opacity .55s var(--ease), transform .55s var(--ease);
+      transform: translateY(26px) scale(.995);
+    }
+    .slide.visible { transform: translateY(0) scale(1); }
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 49;
+      opacity: .035;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+    }
+    .slide::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(0deg, transparent 0 3px, rgba(10,14,39,.12) 3px 5px),
+        radial-gradient(ellipse at center, transparent 52%, rgba(10,14,39,.38) 100%);
+      mix-blend-mode: multiply;
+    }
+    .surface-pink {
+      color: var(--ink);
+      background-color: var(--pink);
+      background-image: linear-gradient(rgba(15,27,61,.09) 2px,transparent 2px),linear-gradient(90deg,rgba(15,27,61,.09) 2px,transparent 2px);
+      background-size: 40px 40px;
+    }
+    .surface-cyan {
+      color: var(--ink);
+      background-color: var(--cyan);
+      background-image: linear-gradient(rgba(15,27,61,.09) 2px,transparent 2px),linear-gradient(90deg,rgba(15,27,61,.09) 2px,transparent 2px);
+      background-size: 40px 40px;
+    }
+    .surface-lav {
+      color: var(--ink);
+      background-color: var(--lavender);
+      background-image: linear-gradient(rgba(15,27,61,.08) 2px,transparent 2px),linear-gradient(90deg,rgba(15,27,61,.08) 2px,transparent 2px);
+      background-size: 40px 40px;
+    }
+    .slide-inner { position: relative; z-index: 10; width: 100%; height: 100%; padding: 112px 104px 92px; }
+    .slide-inner.compact { padding-top: 84px; }
+    .reveal { opacity: 0; transform: translateY(28px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
+    .visible .reveal { opacity: 1; transform: translateY(0); }
+    .visible .reveal:nth-child(2) { transition-delay: .08s; }
+    .visible .reveal:nth-child(3) { transition-delay: .16s; }
+    .visible .reveal:nth-child(4) { transition-delay: .24s; }
+    .visible .reveal:nth-child(5) { transition-delay: .32s; }
+
+    /* === TYPOGRAPHY === */
+    h1, h2, h3, p { margin: 0; }
+    .hero-title, .section-title, .big-number, .level-title { font-family: 'Tektur','Noto Sans SC',sans-serif; font-weight: 900; }
+    .hero-title { font-size: 118px; line-height: 1.14; color: var(--cyan); text-shadow: 4px 4px 0 var(--yellow), 8px 8px 0 var(--navy); max-width: 1250px; }
+    .section-title { font-size: 72px; line-height: 1.18; color: var(--cyan); text-shadow: 4px 4px 0 var(--navy); max-width: 1350px; }
+    .surface-pink .section-title, .surface-cyan .section-title, .surface-lav .section-title { color: var(--navy); text-shadow: 4px 4px 0 rgba(255,255,255,.55); }
+    .level-title { font-size: 92px; line-height: 1.12; color: var(--yellow); text-shadow: 6px 6px 0 #324b9c, 12px 12px 0 var(--navy); }
+    .subtitle { font-size: 36px; line-height: 1.6; max-width: 1250px; color: rgba(255,255,255,.82); }
+    .surface-pink .subtitle, .surface-cyan .subtitle, .surface-lav .subtitle { color: rgba(15,27,61,.82); }
+    .body { font-size: 30px; line-height: 1.72; color: rgba(255,255,255,.78); }
+    .surface-pink .body, .surface-cyan .body, .surface-lav .body { color: rgba(15,27,61,.8); }
+    .eyebrow { display: inline-block; background: var(--navy); color: var(--yellow); padding: 10px 20px; border: 3px solid var(--cyan); font: 700 22px 'Space Mono','Noto Sans SC',monospace; letter-spacing: .08em; box-shadow: 6px 6px 0 rgba(94,220,244,.35); margin-bottom: 28px; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 36px; }
+    .badge { border: 3px solid var(--yellow); padding: 12px 18px; color: var(--yellow); font: 700 20px 'Space Mono','Noto Sans SC',monospace; background: rgba(15,27,61,.65); }
+    .surface-pink .badge, .surface-cyan .badge, .surface-lav .badge { color: var(--navy); border-color: var(--navy); background: rgba(255,255,255,.28); }
+    .huge-question { font-family:'Noto Sans SC',sans-serif; font-size: 78px; line-height: 1.35; font-weight: 900; max-width: 1500px; }
+    .small-label { font: 700 18px 'Space Mono','Noto Sans SC',monospace; letter-spacing: .05em; color: var(--pink); }
+
+    /* === LAYOUTS AND CARDS === */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; height: calc(100% - 120px); }
+    .grid-2.wide-left { grid-template-columns: 1.18fr .82fr; }
+    .grid-2.wide-right { grid-template-columns: .82fr 1.18fr; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 32px; margin-top: 42px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 24px; margin-top: 36px; }
+    .practice-grid { height: 560px; }
+    .practice-grid .canvas-wrap { height: 540px; }
+    .short-grid { height: 300px; }
+    .pixel-card { position: relative; padding: 32px; background: rgba(94,220,244,.08); border: 3px solid rgba(94,220,244,.32); box-shadow: 8px 8px 0 rgba(15,27,61,.55); min-height: 190px; }
+    .pixel-card::before, .pixel-card::after { content:""; position:absolute; width:32px; height:32px; pointer-events:none; }
+    .pixel-card::before { left:-5px; top:-5px; border-left:6px solid var(--cyan); border-top:6px solid var(--cyan); }
+    .pixel-card::after { right:-5px; bottom:-5px; border-right:6px solid var(--yellow); border-bottom:6px solid var(--yellow); }
+    .surface-pink .pixel-card, .surface-cyan .pixel-card, .surface-lav .pixel-card { background: rgba(255,255,255,.34); border-color: rgba(15,27,61,.24); box-shadow: 8px 8px 0 rgba(15,27,61,.24); }
+    .card-icon { font-size: 72px; margin-bottom: 16px; }
+    .card-title { font-size: 34px; font-weight: 900; margin-bottom: 12px; }
+    .card-text { font-size: 25px; line-height: 1.55; opacity: .82; }
+    .callout { padding: 24px 30px; background: var(--yellow); color: var(--navy); border: 4px solid var(--white); box-shadow: 8px 8px 0 var(--cyan); font-size: 30px; font-weight: 900; line-height: 1.45; }
+    .photo-frame { position: relative; height: 620px; border: 5px solid var(--cyan); box-shadow: 12px 12px 0 var(--pink), 24px 24px 0 rgba(15,27,61,.8); overflow: hidden; background: var(--navy); }
+    .photo-frame img { width: 100%; height: 100%; object-fit: cover; display:block; }
+    .photo-frame.contain img { object-fit: contain; background: #fff; }
+    .caption { position:absolute; left:0; right:0; bottom:0; padding:14px 18px; background:rgba(10,14,39,.86); color:#fff; font-size:18px; line-height:1.45; }
+    .surface-pink .photo-frame, .surface-cyan .photo-frame, .surface-lav .photo-frame { border-color:var(--navy); box-shadow:12px 12px 0 var(--yellow),24px 24px 0 rgba(15,27,61,.25); }
+    .stat-row { display:flex; gap:28px; margin-top:42px; }
+    .stat { min-width:210px; padding:26px; border:3px solid rgba(94,220,244,.3); background:rgba(94,220,244,.08); }
+    .stat b { display:block; font:900 56px 'Tektur','Noto Sans SC'; color:var(--cyan); text-shadow:3px 3px 0 var(--navy); }
+    .stat span { font-size:22px; color:var(--pink); }
+
+    /* === PIXEL ILLUSTRATIONS === */
+    .starfield { position:absolute; inset:0; z-index:1; overflow:hidden; pointer-events:none; }
+    .star { position:absolute; width:6px; height:6px; animation:twinkle 3s steps(2,end) infinite; }
+    @keyframes twinkle { 50% { opacity:.2; transform:scale(.6); } }
+    .orbit-art { position:absolute; right:130px; top:210px; width:500px; height:500px; border:10px dashed var(--cyan); border-radius:50%; animation:spin 18s linear infinite; }
+    .orbit-art::before,.orbit-art::after { content:""; position:absolute; border-radius:50%; border:7px solid; }
+    .orbit-art::before { inset:70px; border-color:var(--pink); transform:rotate(24deg); }
+    .orbit-art::after { inset:145px; border-color:var(--yellow); transform:rotate(-18deg); }
+    .turtle-emoji { position:absolute; font-size:220px; filter:drop-shadow(12px 12px 0 #d15b9c); animation:bob 2.4s ease-in-out infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes bob { 50% { transform:translateY(-18px) rotate(-4deg); } }
+    .gear-field { display:flex; align-items:center; justify-content:center; gap:28px; font-size:170px; min-height:470px; }
+    .gear-field span:nth-child(1){animation:spin 10s linear infinite}.gear-field span:nth-child(2){animation:spin 8s linear infinite reverse}.gear-field span:nth-child(3){animation:spin 13s linear infinite}
+    .punch-card { display:grid; grid-template-columns:repeat(12,34px); gap:12px; padding:34px; background:var(--yellow); border:6px solid var(--navy); box-shadow:12px 12px 0 var(--pink); width:max-content; }
+    .punch { width:26px; height:26px; background:var(--navy); opacity:.2; }
+    .punch.on { opacity:1; }
+
+    /* === CODE PANELS === */
+    .code-panel { position:relative; background:#071226; border:4px solid var(--cyan); box-shadow:10px 10px 0 var(--pink); padding:52px 30px 26px; overflow:hidden; }
+    .code-panel::before { content:"PYTHON / 海龟编辑器"; position:absolute; left:0; right:0; top:0; height:38px; padding:7px 14px; background:var(--cyan); color:var(--navy); font:700 18px 'Space Mono','Noto Sans SC'; }
+    pre { margin:0; white-space:pre-wrap; font:700 25px/1.52 'Space Mono','Noto Sans SC',monospace; color:#fff; tab-size:4; }
+    .kw { color:var(--pink); }.fn { color:var(--cyan); }.num { color:var(--yellow); }.str { color:#8ff1b1; }.cm { color:#8193b8; font-weight:400; }
+    .copy-btn { position:absolute; right:12px; top:5px; z-index:3; background:var(--navy); color:var(--yellow); border:2px solid var(--yellow); padding:5px 12px; font-size:17px; }
+    .code-explain { display:grid; gap:18px; }
+    .code-token { padding:18px 22px; border-left:8px solid var(--cyan); background:rgba(94,220,244,.09); font-size:28px; }
+    .code-token b { color:var(--yellow); }
+
+    /* === QUIZZES AND REWARDS === */
+    .quiz { margin-top:34px; }
+    .quiz-options { display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:28px; }
+    .quiz-options.two { grid-template-columns:repeat(2,1fr); }
+    .quiz-option, .pixel-btn { border:4px solid var(--cyan); background:var(--navy); color:#fff; min-height:92px; padding:20px 26px; font-size:28px; font-weight:900; box-shadow:8px 8px 0 var(--pink); transition:transform .16s,box-shadow .16s,background .16s; }
+    .quiz-option:hover,.pixel-btn:hover { transform:translate(3px,3px); box-shadow:4px 4px 0 var(--yellow); }
+    .quiz-option.is-correct { background:#1e8e65; border-color:var(--yellow); }
+    .quiz-option.is-wrong { animation:shake .35s linear; background:#78355a; }
+    .quiz-note { opacity:0; transform:translateY(10px); margin-top:28px; padding:22px 28px; border-left:10px solid var(--yellow); background:rgba(244,208,63,.14); font-size:28px; font-weight:700; transition:.35s var(--ease); }
+    .quiz-note.show { opacity:1; transform:none; }
+    @keyframes shake { 25%{transform:translateX(-10px)}50%{transform:translateX(10px)}75%{transform:translateX(-6px)} }
+    .award-btn { background:var(--yellow); color:var(--navy); border:4px solid #fff; box-shadow:8px 8px 0 var(--cyan); padding:18px 28px; font-size:26px; font-weight:900; }
+    .award-btn.claimed { opacity:.58; filter:grayscale(.6); }
+
+    /* === SCORE HUD === */
+    .score-hud { position:absolute; right:52px; top:28px; z-index:220; width:1120px; min-height:90px; display:flex; align-items:center; gap:8px; padding:10px 12px; background:rgba(10,14,39,.92); border:3px solid var(--cyan); box-shadow:8px 8px 0 var(--pink); }
+    .score-title { color:var(--yellow); font:700 14px 'Space Mono','Noto Sans SC'; width:82px; line-height:1.25; }
+    .team-btn { flex:1; min-width:100px; height:58px; padding:4px 5px; border:2px solid rgba(94,220,244,.5); background:rgba(94,220,244,.08); color:white; font-size:16px; font-weight:900; }
+    .team-btn.active { background:var(--cyan); color:var(--navy); border-color:var(--yellow); box-shadow:4px 4px 0 var(--yellow); }
+    .team-btn b { display:block; font:700 15px 'Space Mono'; color:var(--yellow); }
+    .team-btn.active b { color:var(--navy); }
+    .score-tools { display:flex; flex-direction:column; gap:5px; }
+    .score-tools button { width:32px; height:28px; border:1px solid var(--cyan); background:var(--navy); color:var(--yellow); font-size:14px; }
+    .score-pop { position:absolute; right:38px; top:120px; z-index:230; color:var(--yellow); font:900 42px 'Tektur'; text-shadow:4px 4px 0 var(--navy); pointer-events:none; animation:scoreFly 1.25s var(--ease) forwards; }
+    @keyframes scoreFly { to { transform:translateY(-80px) scale(1.25); opacity:0; } }
+
+    /* === TEACHER SCORE EDITOR === */
+    .score-editor { position:absolute; right:52px; top:142px; z-index:340; width:520px; padding:28px; visibility:hidden; opacity:0; pointer-events:none; transform:translateY(-14px) scale(.97); background:rgba(10,14,39,.98); color:#fff; border:4px solid var(--yellow); box-shadow:12px 12px 0 var(--pink); transition:opacity .2s var(--ease),transform .2s var(--ease),visibility .2s; }
+    .score-editor.active { visibility:visible; opacity:1; pointer-events:auto; transform:none; }
+    .score-editor-head { display:flex; align-items:flex-start; justify-content:space-between; gap:22px; }
+    .score-editor-kicker { color:var(--cyan); font:700 15px 'Space Mono','Noto Sans SC'; letter-spacing:.08em; }
+    .score-editor-name { margin-top:6px; color:var(--yellow); font-size:30px; font-weight:900; }
+    .score-editor-close { width:42px; height:42px; padding:0; border:2px solid var(--cyan); background:transparent; color:#fff; font-size:26px; line-height:1; }
+    .score-editor label { display:block; margin-top:22px; color:#d9eff7; font-size:18px; font-weight:800; }
+    .score-editor input { width:100%; height:76px; margin-top:9px; padding:8px 18px; border:4px solid var(--cyan); outline:none; background:#05091b; color:var(--yellow); font:900 38px 'Tektur','Noto Sans SC'; }
+    .score-editor input:focus { border-color:var(--yellow); box-shadow:0 0 0 4px rgba(244,208,63,.18); }
+    .score-deltas { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:18px; }
+    .score-deltas button { min-height:50px; border:2px solid var(--cyan); background:rgba(94,220,244,.09); color:#fff; font:700 18px 'Space Mono'; }
+    .score-deltas button[data-score-delta^="+"] { border-color:var(--yellow); color:var(--yellow); }
+    .score-editor-save { width:100%; min-height:58px; margin-top:20px; border:3px solid #fff; background:var(--yellow); color:var(--navy); font-size:22px; font-weight:900; box-shadow:6px 6px 0 var(--cyan); }
+    .score-editor-hint { margin-top:14px; color:#a8c7d3; font-size:15px; line-height:1.5; }
+
+    /* === INTERACTIVE LABS === */
+    .lab-panel { display:grid; grid-template-columns:1.15fr .85fr; gap:38px; align-items:center; height:650px; margin-top:26px; }
+    .canvas-wrap { height:610px; display:grid; place-items:center; overflow:hidden; background:#05091b; border:4px solid var(--cyan); box-shadow:10px 10px 0 var(--pink); }
+    .canvas-wrap canvas { width:100%; height:100%; display:block; }
+    .controls { display:grid; gap:22px; }
+    .control { padding:22px; background:rgba(255,255,255,.09); border-left:8px solid var(--cyan); }
+    .control label { display:flex; justify-content:space-between; font-size:27px; font-weight:900; margin-bottom:14px; }
+    input[type="range"] { width:100%; accent-color:var(--yellow); height:28px; }
+    .timer-box { display:grid; place-items:center; margin-top:36px; }
+    .timer-display { font:900 148px 'Tektur','Noto Sans SC'; color:var(--yellow); text-shadow:7px 7px 0 #2b4aa0,14px 14px 0 var(--navy); }
+    .timer-actions { display:flex; gap:20px; }
+
+    /* === VIDEO AND EDITOR === */
+    .video-frame { width:100%; height:680px; border:5px solid var(--cyan); box-shadow:12px 12px 0 var(--pink); background:#000; }
+    .video-frame iframe { width:100%; height:100%; border:0; display:block; }
+    .editor-frame { height:620px; border:5px solid var(--yellow); box-shadow:12px 12px 0 var(--cyan); overflow:hidden; background:#fff; }
+    .editor-frame img { width:100%; height:100%; object-fit:cover; object-position:center top; display:block; }
+    .hotspot { position:absolute; border:8px solid var(--pink); background:rgba(240,166,202,.16); animation:pulseBorder 1.2s steps(2,end) infinite; }
+    @keyframes pulseBorder { 50% { border-color:var(--yellow); } }
+
+    /* === CHROME, NAVIGATION, TOASTS === */
+    .stage-footer { position:absolute; z-index:210; left:76px; right:76px; bottom:28px; height:34px; display:flex; align-items:center; gap:24px; color:rgba(255,255,255,.7); font:700 18px 'Space Mono','Noto Sans SC'; pointer-events:none; }
+    .progress-track { flex:1; height:8px; background:rgba(255,255,255,.14); }
+    .progress-fill { height:100%; width:0; background:var(--cyan); box-shadow:4px 4px 0 var(--pink); transition:width .4s var(--ease); }
+    .chapter-rail { position:absolute; z-index:210; right:30px; top:50%; transform:translateY(-50%); display:grid; gap:24px; }
+    .chapter-dot { width:18px; height:18px; border:3px solid var(--cyan); background:transparent; }
+    .chapter-dot.active { background:var(--cyan); box-shadow:4px 4px 0 var(--pink); }
+    .toast { position:absolute; left:50%; bottom:92px; transform:translate(-50%,30px); z-index:260; background:var(--yellow); color:var(--navy); border:4px solid #fff; box-shadow:8px 8px 0 var(--cyan); padding:18px 28px; font-size:25px; font-weight:900; opacity:0; pointer-events:none; transition:.3s var(--ease); }
+    .toast.show { opacity:1; transform:translate(-50%,0); }
+    .edit-hotzone { position:fixed; left:0; top:0; width:80px; height:80px; z-index:10000; }
+    .edit-toggle { position:fixed; left:18px; top:18px; z-index:10001; width:48px; height:48px; opacity:0; pointer-events:none; background:var(--yellow); color:var(--navy); border:3px solid var(--cyan); transition:opacity .3s; }
+    .edit-toggle.show,.edit-toggle.active { opacity:1; pointer-events:auto; }
+    .edit-panel { position:fixed; left:18px; top:76px; z-index:10002; display:none; gap:8px; padding:10px; background:var(--navy); border:2px solid var(--cyan); }
+    .edit-panel.active { display:flex; }
+    .edit-panel button { background:var(--yellow); border:0; color:var(--navy); padding:8px 12px; font-weight:900; }
+    body.editing [contenteditable="true"] { outline:3px dashed var(--yellow); outline-offset:4px; }
+    .source-list { columns:2; column-gap:50px; margin-top:30px; }
+    .source-list a { display:block; break-inside:avoid; margin-bottom:17px; color:var(--cyan); font-size:21px; line-height:1.45; }
+    .surface-lav .source-list a { color:#174f7d; }
+  </style>
+</head>
+<body>
+  <div class="deck-viewport">
+    <main class="deck-stage" id="deckStage" aria-label="Python 暑假第一课互动幻灯片">
+
+      <!-- === 01: COVER === -->
+      <section class="slide surface-dark" data-chapter="0">
+        <div class="slide-inner">
+          <div class="eyebrow reveal editable">MISSION 01 / PYTHON SUMMER</div>
+          <h1 class="hero-title reveal editable">Python 暑假第一课<br>海龟探险队</h1>
+          <p class="subtitle reveal editable" style="margin-top:44px">启动代码飞船 · 穿越计算机历史 · 解锁几何星系</p>
+          <div class="badge-row reveal"><span class="badge editable">零基础</span><span class="badge editable">120 分钟</span><span class="badge editable">边学边画</span><span class="badge editable">答题赚积分</span></div>
+          <div class="orbit-art"></div><div class="turtle-emoji" style="right:275px;top:365px">🐢</div>
+        </div>
+      </section>
+
+      <!-- === 02: MISSION MAP === -->
+      <section class="slide surface-lav" data-chapter="0">
+        <div class="slide-inner">
+          <div class="eyebrow reveal editable">任务地图</div><h2 class="section-title reveal editable">今天要攻克 6 个关卡</h2>
+          <div class="grid-3 reveal">
+            <div class="pixel-card"><div class="card-icon">🕰️</div><div class="card-title editable">计算机时光岛</div><div class="card-text editable">从算盘到房间大的电脑</div></div>
+            <div class="pixel-card"><div class="card-icon">🐍</div><div class="card-title editable">Python 诞生站</div><div class="card-text editable">它为什么叫 Python？</div></div>
+            <div class="pixel-card"><div class="card-icon">🧭</div><div class="card-title editable">海龟控制舱</div><div class="card-text editable">认识编辑器和指令</div></div>
+            <div class="pixel-card"><div class="card-icon">📐</div><div class="card-title editable">几何训练场</div><div class="card-text editable">直线、三角形、多边形、圆</div></div>
+            <div class="pixel-card"><div class="card-icon">🌈</div><div class="card-title editable">彩色螺旋星</div><div class="card-text editable">复刻教材奇异图形</div></div>
+            <div class="pixel-card"><div class="card-icon">🏆</div><div class="card-title editable">终极创作战</div><div class="card-text editable">改造参数，创造新图案</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- === 03: SCORE RULES === -->
+      <section class="slide surface-cyan" data-chapter="0">
+        <div class="slide-inner">
+          <div class="eyebrow reveal editable">积分规则</div><h2 class="section-title reveal editable">勇敢回答，就会变强</h2>
+          <div class="grid-3 reveal">
+            <div class="pixel-card"><div class="big-number" style="font-size:86px">+20</div><div class="card-title editable">勇气分</div><div class="card-text editable">答错也没关系，敢试就有分</div></div>
+            <div class="pixel-card"><div class="big-number" style="font-size:86px">+100</div><div class="card-title editable">答对分</div><div class="card-text editable">第一次答对，直接获得满分</div></div>
+            <div class="pixel-card"><div class="big-number" style="font-size:86px">+150</div><div class="card-title editable">通关分</div><div class="card-text editable">完成编程任务后领取</div></div>
+          </div>
+          <div class="callout reveal" style="margin-top:48px">8 位同学先点击右上角自己的名字，再抢答！答题积分分别保存。⚡</div>
+        </div>
+      </section>
+
+      <!-- === 04: WARM-UP QUIZ === -->
+      <section class="slide" data-chapter="0">
+        <div class="slide-inner">
+          <div class="eyebrow reveal editable">热身抢答 · 100 XP</div><h2 class="huge-question reveal editable">你觉得电脑真的会“思考”吗？</h2>
+          <div class="quiz reveal" data-qid="q-computer-think" data-correct="c">
+            <div class="quiz-options"><button class="quiz-option" data-answer="a">A. 会，它和人脑完全一样</button><button class="quiz-option" data-answer="b">B. 会，它什么都知道</button><button class="quiz-option" data-answer="c">C. 它按人给的指令处理信息</button></div>
+            <div class="quiz-note editable">电脑特别快，但它需要清楚、准确的指令。今天我们就来做“发指令的人”。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- === 05: WORLD WITHOUT COMPUTERS === -->
+      <section class="slide surface-pink" data-chapter="1">
+        <div class="slide-inner">
+          <div class="eyebrow reveal editable">时光岛 / 入口</div><h2 class="section-title reveal editable">如果所有电脑消失一天……</h2>
+          <div class="grid-4 reveal">
+            <div class="pixel-card"><div class="card-icon">🚦</div><div class="card-title editable">红绿灯</div><div class="card-text editable">交通控制会混乱</div></div>
+            <div class="pixel-card"><div class="card-icon">🚄</div><div class="card-title editable">高铁</div><div class="card-text editable">调度系统无法工作</div></div>
+            <div class="pixel-card"><div class="card-icon">🏥</div><div class="card-title editable">医院</div><div class="card-text editable">设备和信息系统受影响</div></div>
+            <div class="pixel-card"><div class="card-icon">🎮</div><div class="card-title editable">游戏</div><div class="card-text editable">当然也玩不了了</div></div>
+          </div>
+          <p class="subtitle reveal editable" style="margin-top:46px">电脑已经藏进生活的每个角落。但故事最早从“数数”开始。</p>
+        </div>
+      </section>
+
+      <!-- === 06: ABACUS === -->
+      <section class="slide" data-chapter="1">
+        <div class="slide-inner compact">
+          <div class="grid-2 wide-left">
+            <div><div class="eyebrow reveal editable">很久很久以前</div><h2 class="section-title reveal editable">第一批“计算机”没有电</h2><p class="body reveal editable" style="margin-top:34px">人们先用手指、石子、绳结，再用算盘帮助计算。英文 computer 最早甚至可以指“负责计算的人”。</p><div class="callout reveal" style="margin-top:38px">互动：如果没有计算器，你会怎样快速算 47 + 38？</div></div>
+            <figure class="photo-frame reveal"><img src="assets/abacus.jpg" alt="木制算盘"><figcaption class="caption editable">木制算盘 · Smithsonian Institution</figcaption></figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- === 07: VIDEO === -->
+      <section class="slide" data-chapter="1">
+        <div class="slide-inner compact">
+          <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:24px"><div><div class="eyebrow reveal editable">3 分钟视频</div><h2 class="section-title reveal editable" style="font-size:58px">计算机怎样一步步长大？</h2></div><div class="badge editable">总视频时长 ≤ 5 分钟</div></div>
+          <div class="video-frame reveal"><iframe src="https://player.bilibili.com/player.html?bvid=BV1Dg4116726&page=1&high_quality=1&danmaku=0&autoplay=0" title="计算机的诞生与发展" allowfullscreen="true" scrolling="no" sandbox="allow-scripts allow-same-origin allow-presentation"></iframe></div>
+        </div>
+      </section>
+
+      <!-- === 08: VIDEO RAPID QUIZ === -->
+      <section class="slide surface-cyan" data-chapter="1">
+        <div class="slide-inner">
+          <div class="eyebrow reveal editable">视频闪电题 · 100 XP</div><h2 class="section-title reveal editable">哪样东西最早帮助人类计算？</h2>
+          <div class="quiz reveal" data-qid="q-first-calc" data-correct="a"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 算盘</button><button class="quiz-option" data-answer="b">B. 智能手机</button><button class="quiz-option" data-answer="c">C. 游戏机</button></div><div class="quiz-note editable">算盘比电子计算机早了非常久，是重要的手动计算工具。</div></div>
+        </div>
+      </section>
+
+      <!-- === 09: MECHANICAL ERA === -->
+      <section class="slide surface-lav" data-chapter="1">
+        <div class="slide-inner">
+          <div class="grid-2"><div><div class="eyebrow reveal editable">机械时代</div><h2 class="section-title reveal editable">齿轮也能“做数学”</h2><p class="body reveal editable" style="margin-top:34px">人们把加减乘除变成齿轮的转动。机器不会累，但必须事先设计好每一步。</p><div class="stat-row"><div class="stat"><b>0</b><span class="editable">需要电</span></div><div class="stat"><b>∞</b><span class="editable">需要好点子</span></div></div></div><div class="gear-field reveal"><span>⚙️</span><span>⚙️</span><span>⚙️</span></div></div>
+        </div>
+      </section>
+
+      <!-- === 10: BABBAGE === -->
+      <section class="slide" data-chapter="1">
+        <div class="slide-inner">
+          <div class="eyebrow reveal editable">1830s / 超前的设计</div><h2 class="section-title reveal editable">巴贝奇想造一台“万能计算机器”</h2>
+          <div class="grid-3 reveal"><div class="pixel-card"><div class="card-icon">🧮</div><div class="card-title editable">计算</div><div class="card-text editable">能执行不同数学操作</div></div><div class="pixel-card"><div class="card-icon">🗄️</div><div class="card-title editable">记忆</div><div class="card-text editable">能保存中间结果</div></div><div class="pixel-card"><div class="card-icon">🃏</div><div class="card-title editable">程序</div><div class="card-text editable">用打孔卡告诉机器步骤</div></div></div>
+          <p class="subtitle reveal editable" style="margin-top:44px">分析机没有在他生前完整建成，但它已经拥有现代计算机的许多关键想法。</p>
+        </div>
+      </section>
+
+      <!-- === 11: ADA === -->
+      <section class="slide surface-pink" data-chapter="1">
+        <div class="slide-inner compact"><div class="grid-2 wide-left"><div><div class="eyebrow reveal editable">1843 / 程序的先声</div><h2 class="section-title reveal editable">Ada 写下了给机器执行的步骤</h2><p class="body reveal editable" style="margin-top:30px">她在分析机笔记中描述了逐步计算的方法，因此常被称为“第一位程序员”。真正厉害的是：她看见机器未来还能处理音乐、文字和图案。</p><div class="callout reveal" style="margin-top:36px">程序 = 按顺序排列、足够精确的指令</div></div><figure class="photo-frame reveal"><img src="assets/ada_lovelace.jpg" alt="Ada Lovelace 肖像"><figcaption class="caption editable">Ada Lovelace 肖像 · 公版作品</figcaption></figure></div></div>
+      </section>
+
+      <!-- === 12: PUNCH CARDS === -->
+      <section class="slide surface-cyan" data-chapter="1">
+        <div class="slide-inner"><div class="grid-2"><div><div class="eyebrow reveal editable">指令如何进入机器？</div><h2 class="section-title reveal editable">有洞 / 没洞，也是一种语言</h2><p class="body reveal editable" style="margin-top:34px">打孔卡把指令变成机器能识别的模式。今天的电脑仍然把信息变成两种状态：0 和 1。</p><div class="quiz" data-qid="q-punch" data-correct="b"><div class="quiz-options two"><button class="quiz-option" data-answer="a">A. 洞越多，电脑越开心</button><button class="quiz-option" data-answer="b">B. 不同洞位代表不同信息</button></div><div class="quiz-note editable">对！位置和排列才是信息，就像密码。</div></div></div><div class="punch-card reveal" id="punchCard" aria-label="打孔卡示意图"></div></div></div>
+      </section>
+
+      <!-- === 13: ENIAC === -->
+      <section class="slide" data-chapter="1">
+        <div class="slide-inner compact"><div class="grid-2 wide-left"><div><div class="eyebrow reveal editable">1946 / 电子巨兽</div><h2 class="section-title reveal editable">ENIAC：房间一样大的计算机</h2><div class="stat-row reveal"><div class="stat"><b>18,000</b><span class="editable">约 1.8 万只电子管</span></div><div class="stat"><b>30t</b><span class="editable">约 30 吨</span></div></div><p class="body reveal editable" style="margin-top:34px">它的速度远超早期机器，但改程序要连接电缆、拨动开关。</p></div><figure class="photo-frame reveal"><img src="assets/eniac.jpg" alt="ENIAC 计算机"><figcaption class="caption editable">ENIAC · U.S. Army Photo（公版）</figcaption></figure></div></div>
+      </section>
+
+      <!-- === 14: SHRINKING COMPUTERS === -->
+      <section class="slide surface-lav" data-chapter="1">
+        <div class="slide-inner"><div class="eyebrow reveal editable">电子管 → 晶体管 → 芯片</div><h2 class="section-title reveal editable">电脑越来越小，能力越来越大</h2><div class="grid-4 reveal"><div class="pixel-card"><div class="card-icon">🏢</div><div class="card-title editable">一间房</div><div class="card-text editable">早期大型机</div></div><div class="pixel-card"><div class="card-icon">🗄️</div><div class="card-title editable">一只柜子</div><div class="card-text editable">小型机</div></div><div class="pixel-card"><div class="card-icon">🖥️</div><div class="card-title editable">一张桌子</div><div class="card-text editable">个人电脑</div></div><div class="pixel-card"><div class="card-icon">⌚</div><div class="card-title editable">一只手表</div><div class="card-text editable">可穿戴设备</div></div></div><p class="subtitle reveal editable" style="margin-top:44px">变小的是机器，变大的，是我们能让它做的事情。</p></div>
+      </section>
+
+      <!-- === 15: PROGRAMMING LANGUAGE === -->
+      <section class="slide" data-chapter="1">
+        <div class="slide-inner"><div class="eyebrow reveal editable">人类 ↔ 机器</div><h2 class="section-title reveal editable">编程语言是一位“翻译官”</h2><div class="grid-3 reveal"><div class="pixel-card"><div class="card-icon">🧑</div><div class="card-title editable">人的想法</div><div class="card-text editable">“请画一个三角形”</div></div><div class="pixel-card"><div class="card-icon">🐍</div><div class="card-title editable">Python 代码</div><div class="card-text editable">forward / left / repeat</div></div><div class="pixel-card"><div class="card-icon">💻</div><div class="card-title editable">机器动作</div><div class="card-text editable">移动、转向、画线</div></div></div><div class="callout reveal" style="margin-top:50px">代码不是咒语，是一套双方都能理解的规则。</div></div>
+      </section>
+
+      <!-- === 16: PRECISE INSTRUCTIONS === -->
+      <section class="slide surface-pink" data-chapter="1">
+        <div class="slide-inner"><div class="eyebrow reveal editable">真人海龟游戏</div><h2 class="huge-question reveal editable">请一位同学闭眼当“海龟”，另一位只能说：前进几步、左转或右转</h2><div class="grid-3 reveal"><div class="pixel-card"><div class="card-title editable">❌ 往那边走</div><div class="card-text editable">“那边”不够精确</div></div><div class="pixel-card"><div class="card-title editable">✅ 前进 3 步</div><div class="card-text editable">距离很明确</div></div><div class="pixel-card"><div class="card-title editable">✅ 左转 90°</div><div class="card-text editable">方向很明确</div></div></div></div>
+      </section>
+
+      <!-- === 17: GUIDO === -->
+      <section class="slide" data-chapter="1">
+        <div class="slide-inner compact"><div class="grid-2 wide-left"><div><div class="eyebrow reveal editable">1989 圣诞假期</div><h2 class="section-title reveal editable">Guido 想造一种更好读的语言</h2><p class="body reveal editable" style="margin-top:32px">荷兰程序员 Guido van Rossum 开始编写 Python。1991 年，Python 首次公开发布。</p><img src="assets/python-logo.svg" alt="Python 标志" style="width:520px;margin-top:38px;background:white;padding:18px;border:4px solid var(--yellow)"></div><figure class="photo-frame reveal"><img src="assets/guido.jpg" alt="Guido van Rossum"><figcaption class="caption editable">Guido van Rossum · 官方个人简介照片</figcaption></figure></div></div>
+      </section>
+
+      <!-- === 18: NAME QUIZ === -->
+      <section class="slide surface-cyan" data-chapter="1">
+        <div class="slide-inner"><div class="eyebrow reveal editable">历史彩蛋 · 100 XP</div><h2 class="section-title reveal editable">Python 为什么叫“Python”？</h2><div class="quiz reveal" data-qid="q-python-name" data-correct="b"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 作者特别喜欢蟒蛇</button><button class="quiz-option" data-answer="b">B. 来自喜剧《Monty Python》</button><button class="quiz-option" data-answer="c">C. 随机抽到的单词</button></div><div class="quiz-note editable">官方 FAQ：Guido 当时在读《Monty Python's Flying Circus》的剧本，觉得这个名字短、独特又神秘。</div></div></div>
+      </section>
+
+      <!-- === 19: READABLE PYTHON === -->
+      <section class="slide surface-lav" data-chapter="1">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">为什么第一课选 Python？</div><h2 class="section-title reveal editable">代码看起来，像在写清楚的步骤</h2><div class="grid-2 wide-right" style="margin-top:26px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    t.<span class="fn">forward</span>(<span class="num">150</span>)
+    t.<span class="fn">left</span>(<span class="num">120</span>)</code></pre></div><div class="code-explain reveal"><div class="code-token editable"><b>for</b>：重复做事情</div><div class="code-token editable"><b>forward</b>：向前走</div><div class="code-token editable"><b>left</b>：向左转</div><div class="callout editable">先读懂，再运行，再修改。</div></div></div></div>
+      </section>
+
+      <!-- === 20: LOGO TURTLE === -->
+      <section class="slide surface-pink" data-chapter="1">
+        <div class="slide-inner compact"><div class="grid-2 wide-left"><div><div class="eyebrow reveal editable">1967 → 今天</div><h2 class="section-title reveal editable">海龟原来真的是一只机器人</h2><p class="body reveal editable" style="margin-top:30px">Logo 语言为了帮助孩子学习编程，让一只“地板海龟”听指令移动并留下线条。后来它搬进了屏幕，Python 也继承了这种画图方式。</p><div class="callout reveal" style="margin-top:32px">我们不是让电脑教孩子，而是让孩子指挥电脑。</div></div><figure class="photo-frame reveal"><img src="assets/logo_turtle.jpg" alt="早期 Logo Turtle 机器人"><figcaption class="caption editable">早期 Logo Turtle · MIT News / Cynthia Solomon</figcaption></figure></div></div>
+      </section>
+
+      <!-- === 21: LEVEL TRANSITION === -->
+      <section class="slide" data-chapter="2">
+        <div class="slide-inner" style="display:grid;place-items:center;text-align:center"><div><div class="eyebrow reveal editable">LEVEL 02 UNLOCKED</div><h2 class="level-title reveal editable">进入海龟控制舱</h2><p class="subtitle reveal editable" style="margin:34px auto 0">接下来，每个人都要亲手运行代码。</p><div class="turtle-emoji" style="position:relative;right:auto;top:auto;margin-top:38px">🐢</div></div></div>
+      </section>
+
+      <!-- === 22: EDITOR INTERFACE === -->
+      <section class="slide surface-lav" data-chapter="2">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">认识工具</div><h2 class="section-title reveal editable" style="font-size:58px">黄色的海龟编辑器，就是我们的驾驶舱</h2><div class="editor-frame reveal" style="position:relative;margin-top:24px"><img src="assets/turtle-editor.png" alt="海龟编辑器主界面"><span class="hotspot" style="right:30px;bottom:20px;width:150px;height:70px"></span></div></div>
+      </section>
+
+      <!-- === 23: RUN WORKFLOW === -->
+      <section class="slide surface-cyan" data-chapter="2">
+        <div class="slide-inner"><div class="eyebrow reveal editable">每次运行只需 3 步</div><h2 class="section-title reveal editable">输入 → 检查 → 运行</h2><div class="grid-3 reveal"><div class="pixel-card"><div class="big-number" style="font-size:86px">01</div><div class="card-title editable">输入代码</div><div class="card-text editable">注意英文符号和缩进</div></div><div class="pixel-card"><div class="big-number" style="font-size:86px">02</div><div class="card-title editable">检查红线</div><div class="card-text editable">拼写、括号、冒号</div></div><div class="pixel-card"><div class="big-number" style="font-size:86px">03</div><div class="card-title editable">点击运行</div><div class="card-text editable">看海龟有没有听懂</div></div></div><div class="callout reveal" style="margin-top:50px">出错不是失败，是电脑在给你线索。</div></div>
+      </section>
+
+      <!-- === 24: IMPORT TURTLE === -->
+      <section class="slide" data-chapter="2">
+        <div class="slide-inner"><div class="eyebrow reveal editable">第一句代码</div><h2 class="section-title reveal editable">把“海龟工具箱”带进来</h2><div class="grid-2" style="margin-top:24px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle</code></pre></div><div><div class="huge-question reveal editable" style="font-size:64px">import = 导入</div><p class="body reveal editable" style="margin-top:28px">就像上美术课前，先把画笔工具箱拿到桌上。</p></div></div></div>
+      </section>
+
+      <!-- === 25: CREATE PEN === -->
+      <section class="slide surface-pink" data-chapter="2">
+        <div class="slide-inner"><div class="eyebrow reveal editable">给海龟起个短名字</div><h2 class="section-title reveal editable">t，就是我们的画笔海龟</h2><div class="grid-2" style="margin-top:24px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+
+t = turtle.<span class="fn">Pen</span>()</code></pre></div><div class="pixel-card reveal"><div class="card-icon">🐢</div><div class="card-title editable">长名字 → 短名字</div><div class="card-text editable">以后输入 t.forward()，就是命令这只海龟前进。</div></div></div></div>
+      </section>
+
+      <!-- === 26: LINE === -->
+      <section class="slide" data-chapter="3">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">关卡 1 · 第一根线</div><h2 class="section-title reveal editable">向前走 200 步</h2><div class="grid-2 wide-right practice-grid" style="margin-top:20px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+t = turtle.<span class="fn">Pen</span>()
+t.<span class="fn">forward</span>(<span class="num">200</span>)
+turtle.<span class="fn">done</span>()</code></pre></div><div class="canvas-wrap reveal"><canvas id="lineCanvas" width="820" height="580"></canvas></div></div><button class="award-btn interactive" data-award="150" data-task="line" style="margin-top:24px">我画出直线了！领取 +150 XP</button></div>
+      </section>
+
+      <!-- === 27: LENGTH CHALLENGE === -->
+      <section class="slide surface-cyan" data-chapter="3">
+        <div class="slide-inner"><div class="eyebrow reveal editable">动手挑战 · 150 XP</div><h2 class="huge-question reveal editable">把 200 改成 50、300、500，哪根线最长？</h2><div class="grid-3 reveal"><div class="pixel-card"><div class="card-title">forward(50)</div><div class="card-text editable">短跑海龟</div></div><div class="pixel-card"><div class="card-title">forward(300)</div><div class="card-text editable">中长跑海龟</div></div><div class="pixel-card"><div class="card-title">forward(500)</div><div class="card-text editable">可能跑出画布！</div></div></div><button class="award-btn interactive" data-award="150" data-task="length" style="margin-top:52px">三种长度都试过了</button></div>
+      </section>
+
+      <!-- === 28: TURN PREDICTION === -->
+      <section class="slide" data-chapter="3">
+        <div class="slide-inner"><div class="eyebrow reveal editable">指令预测 · 100 XP</div><h2 class="section-title reveal editable">海龟面向右边，left(90) 后朝哪里？</h2><div class="quiz reveal" data-qid="q-left90" data-correct="b"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 右边 →</button><button class="quiz-option" data-answer="b">B. 上边 ↑</button><button class="quiz-option" data-answer="c">C. 下边 ↓</button></div><div class="quiz-note editable">向左转 90°，就是逆时针转四分之一圈。</div></div><div class="callout reveal" style="margin-top:40px">全班一起站起来：身体当海龟，左转 90°！</div></div>
+      </section>
+
+      <!-- === 29: TRIANGLE PLAN === -->
+      <section class="slide surface-lav" data-chapter="3">
+        <div class="slide-inner"><div class="eyebrow reveal editable">关卡 2 · 三角形</div><h2 class="section-title reveal editable">每画一条边，就转 120°</h2><div class="grid-2"><div><div class="grid-3" style="grid-template-columns:1fr"><div class="pixel-card"><div class="card-title editable">① 前进</div><div class="card-text editable">画出一条边</div></div><div class="pixel-card"><div class="card-title editable">② 左转 120°</div><div class="card-text editable">准备画下一条边</div></div><div class="pixel-card"><div class="card-title editable">③ 重复 3 次</div><div class="card-text editable">回到出发点</div></div></div></div><div class="canvas-wrap reveal"><canvas id="triangleCanvas" width="820" height="580"></canvas></div></div></div>
+      </section>
+
+      <!-- === 30: TRIANGLE CODE === -->
+      <section class="slide" data-chapter="3">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">先不用循环</div><h2 class="section-title reveal editable">把动作写 3 遍</h2><div class="code-panel reveal" style="margin-top:28px"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+t = turtle.<span class="fn">Pen</span>()
+t.<span class="fn">forward</span>(<span class="num">150</span>)
+t.<span class="fn">left</span>(<span class="num">120</span>)
+t.<span class="fn">forward</span>(<span class="num">150</span>)
+t.<span class="fn">left</span>(<span class="num">120</span>)
+t.<span class="fn">forward</span>(<span class="num">150</span>)
+t.<span class="fn">left</span>(<span class="num">120</span>)
+turtle.<span class="fn">done</span>()</code></pre></div><button class="award-btn interactive" data-award="150" data-task="triangle-manual" style="margin-top:24px">三角形闭合了！领取积分</button></div>
+      </section>
+
+      <!-- === 31: LOOP === -->
+      <section class="slide surface-pink" data-chapter="3">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">程序员的偷懒神器</div><h2 class="section-title reveal editable">重复的动作，交给 for 循环</h2><div class="grid-2 wide-right" style="margin-top:24px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    t.<span class="fn">forward</span>(<span class="num">150</span>)
+    t.<span class="fn">left</span>(<span class="num">120</span>)</code></pre></div><div class="code-explain reveal"><div class="code-token editable"><b>range(3)</b>：重复 3 次</div><div class="code-token editable"><b>冒号 :</b>：下面要开始一组动作</div><div class="code-token editable"><b>缩进</b>：告诉电脑哪些动作要重复</div></div></div></div>
+      </section>
+
+      <!-- === 32: SQUARE === -->
+      <section class="slide" data-chapter="3">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">关卡 3 · 正方形</div><h2 class="section-title reveal editable">4 条边，每次左转 90°</h2><div class="grid-2 wide-right practice-grid" style="margin-top:20px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+t = turtle.<span class="fn">Pen</span>()
+
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">4</span>):
+    t.<span class="fn">forward</span>(<span class="num">150</span>)
+    t.<span class="fn">left</span>(<span class="num">90</span>)
+
+turtle.<span class="fn">done</span>()</code></pre></div><div class="canvas-wrap reveal"><canvas id="squareCanvas" width="820" height="580"></canvas></div></div><button class="award-btn interactive" data-award="150" data-task="square" style="margin-top:24px">正方形通关</button></div>
+      </section>
+
+      <!-- === 33: POLYGON FORMULA QUIZ === -->
+      <section class="slide surface-cyan" data-chapter="3">
+        <div class="slide-inner"><div class="eyebrow reveal editable">数学魔法 · 100 XP</div><h2 class="section-title reveal editable">正五边形每次应转多少度？</h2><p class="subtitle reveal editable" style="margin-top:24px">海龟转角 = 360 ÷ 边数</p><div class="quiz reveal" data-qid="q-pentagon" data-correct="b"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 60°</button><button class="quiz-option" data-answer="b">B. 72°</button><button class="quiz-option" data-answer="c">C. 90°</button></div><div class="quiz-note editable">360 ÷ 5 = 72。海龟累计转满一整圈，图形就闭合。</div></div></div>
+      </section>
+
+      <!-- === 34: POLYGON LAB === -->
+      <section class="slide" data-chapter="3">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">互动实验室</div><h2 class="section-title reveal editable" style="font-size:58px">改变边数，观察转角</h2><div class="lab-panel"><div class="canvas-wrap"><canvas id="polygonLab" width="900" height="600"></canvas></div><div class="controls"><div class="control"><label><span class="editable">边数 sides</span><b id="polySidesValue">5</b></label><input class="interactive" id="polySides" type="range" min="3" max="12" value="5"></div><div class="control"><label><span class="editable">自动转角</span><b id="polyAngleValue">72°</b></label><div class="body editable">360 ÷ sides</div></div><button class="award-btn interactive" data-award="150" data-task="polygon-lab">我试了至少 3 种多边形</button></div></div></div>
+      </section>
+
+      <!-- === 35: CIRCLE === -->
+      <section class="slide surface-lav" data-chapter="3">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">关卡 4 · 圆形</div><h2 class="section-title reveal editable">一条命令，画一个圆</h2><div class="grid-2 wide-right practice-grid" style="margin-top:20px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+t = turtle.<span class="fn">Pen</span>()
+t.<span class="fn">circle</span>(<span class="num">100</span>)
+turtle.<span class="fn">done</span>()</code></pre></div><div class="canvas-wrap reveal"><canvas id="circleCanvas" width="820" height="580"></canvas></div></div><div class="callout reveal" style="margin-top:24px">circle(100) 中的 100 是半径。</div></div>
+      </section>
+
+      <!-- === 36: FLOWER CHALLENGE === -->
+      <section class="slide" data-chapter="3">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">加餐挑战 · 150 XP</div><h2 class="section-title reveal editable">把圆转 12 次，会出现什么？</h2><div class="grid-2 wide-right practice-grid" style="margin-top:20px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">12</span>):
+    t.<span class="fn">circle</span>(<span class="num">80</span>)
+    t.<span class="fn">left</span>(<span class="num">30</span>)</code></pre></div><div class="canvas-wrap reveal"><canvas id="flowerCanvas" width="820" height="580"></canvas></div></div><button class="award-btn interactive" data-award="150" data-task="flower" style="margin-top:24px">花朵出现了</button></div>
+      </section>
+
+      <!-- === 37: CHECKPOINT QUIZ === -->
+      <section class="slide surface-pink" data-chapter="3">
+        <div class="slide-inner"><div class="eyebrow reveal editable">中途存档 · 100 XP</div><h2 class="section-title reveal editable">哪条命令负责“转向”？</h2><div class="quiz reveal" data-qid="q-turn-command" data-correct="c"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. forward()</button><button class="quiz-option" data-answer="b">B. circle()</button><button class="quiz-option" data-answer="c">C. left()</button></div><div class="quiz-note editable">forward 前进，left 左转，circle 画圆。基础技能已集齐！</div></div></div>
+      </section>
+
+      <!-- === 38: BREAK TIMER === -->
+      <section class="slide" data-chapter="4">
+        <div class="slide-inner" style="text-align:center"><div class="eyebrow reveal editable">ENERGY RESTORE</div><h2 class="level-title reveal editable">课间休息 10 分钟</h2><div class="timer-box reveal"><div class="timer-display" id="breakTimer">10:00</div><div class="timer-actions"><button class="pixel-btn interactive" data-timer="start">开始</button><button class="pixel-btn interactive" data-timer="pause">暂停</button><button class="pixel-btn interactive" data-timer="reset">重置</button></div></div><p class="subtitle reveal editable" style="margin:38px auto 0">喝水、远眺、活动肩颈。倒计时结束后进入彩色螺旋星。</p></div>
+      </section>
+
+      <!-- === 39: CHAPTER 2 TRANSITION === -->
+      <section class="slide surface-lav" data-chapter="5">
+        <div class="slide-inner"><div class="grid-2 wide-left"><div><div class="eyebrow reveal editable">教材第 2 章</div><h2 class="level-title reveal editable" style="font-size:82px">海龟作图<br>用 Python 绘图</h2><p class="body reveal editable" style="margin-top:32px">接下来从简单图形升级到教材中的旋转、颜色、变量和奇异图形。</p></div><figure class="photo-frame contain reveal"><img src="assets/book_shapes.jpg" alt="教材中的奇异图形"><figcaption class="caption editable">《教孩子学编程（Python 语言版）》第 2 章图形</figcaption></figure></div></div>
+      </section>
+
+      <!-- === 40: FIRST SPIRAL === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">教材 2.1 · 第一个海龟程序</div><h2 class="section-title reveal editable" style="font-size:58px">边走边变长：方形螺旋</h2><div class="grid-2 wide-right practice-grid" style="margin-top:18px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+t = turtle.<span class="fn">Pen</span>()
+
+<span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+    t.<span class="fn">forward</span>(x)
+    t.<span class="fn">left</span>(<span class="num">90</span>)
+
+turtle.<span class="fn">done</span>()</code></pre></div><div class="canvas-wrap reveal"><canvas id="squareSpiralCanvas" width="820" height="580"></canvas></div></div><button class="award-btn interactive" data-award="150" data-task="square-spiral" style="margin-top:20px">方形螺旋通关</button></div>
+      </section>
+
+      <!-- === 41: DECODE RANGE === -->
+      <section class="slide surface-cyan" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">代码解密</div><h2 class="section-title reveal editable">x 每次都会长大一点</h2><div class="grid-4 reveal"><div class="pixel-card"><div class="big-number" style="font-size:72px">0</div><div class="card-text editable">第 1 次</div></div><div class="pixel-card"><div class="big-number" style="font-size:72px">1</div><div class="card-text editable">第 2 次</div></div><div class="pixel-card"><div class="big-number" style="font-size:72px">2</div><div class="card-text editable">第 3 次</div></div><div class="pixel-card"><div class="big-number" style="font-size:72px">…99</div><div class="card-text editable">第 100 次</div></div></div><div class="callout reveal" style="margin-top:50px">forward(x)：x 越大，海龟走得越远。</div></div>
+      </section>
+
+      <!-- === 42: PREDICTION QUIZ === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">预测图形 · 100 XP</div><h2 class="section-title reveal editable">如果把 forward(x) 改成 forward(50)，会怎样？</h2><div class="quiz reveal" data-qid="q-forward-x" data-correct="a"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 每条边都一样长</button><button class="quiz-option" data-answer="b">B. 每条边越来越长</button><button class="quiz-option" data-answer="c">C. 海龟消失</button></div><div class="quiz-note editable">固定写 50，就不会越走越远，图形也不再向外展开。</div></div></div>
+      </section>
+
+      <!-- === 43: 90 VS 91 === -->
+      <section class="slide surface-lav" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">教材 2.2 · 旋转的海龟</div><h2 class="section-title reveal editable">只多转 1°，图形就“活”了</h2><div class="grid-2" style="margin-top:24px"><div><div class="small-label editable">LEFT 90°</div><div class="canvas-wrap" style="height:520px"><canvas id="angle90Canvas" width="780" height="520"></canvas></div></div><div><div class="small-label editable">LEFT 91°</div><div class="canvas-wrap" style="height:520px"><canvas id="angle91Canvas" width="780" height="520"></canvas></div></div></div></div>
+      </section>
+
+      <!-- === 44: ANGLE QUIZ === -->
+      <section class="slide surface-pink" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">观察题 · 100 XP</div><h2 class="section-title reveal editable">为什么 91° 会形成旋转花纹？</h2><div class="quiz reveal" data-qid="q-angle91" data-correct="b"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 每次都回到完全相同的方向</button><button class="quiz-option" data-answer="b">B. 每次比直角多偏 1°</button><button class="quiz-option" data-answer="c">C. 电脑画错了</button></div><div class="quiz-note editable">每次多出来的 1° 不断累积，方形螺旋就慢慢旋转起来。</div></div></div>
+      </section>
+
+      <!-- === 45: ANGLE LAB === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">互动实验室</div><h2 class="section-title reveal editable" style="font-size:58px">旋转角度实验</h2><div class="lab-panel"><div class="canvas-wrap"><canvas id="angleLab" width="900" height="600"></canvas></div><div class="controls"><div class="control"><label><span class="editable">左转角度</span><b id="angleLabValue">91°</b></label><input class="interactive" id="angleSlider" type="range" min="80" max="140" value="91"></div><div class="control"><div class="body editable">试试：89°、90°、91°、120°、121°</div></div><button class="award-btn interactive" data-award="150" data-task="angle-lab">完成 5 种角度实验</button></div></div></div>
+      </section>
+
+      <!-- === 46: CIRCLE SPIRAL === -->
+      <section class="slide surface-cyan" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">教材 2.3 · 海龟画圆</div><h2 class="section-title reveal editable">半径越来越大的圆</h2><div class="grid-2 wide-right practice-grid" style="margin-top:20px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+    t.<span class="fn">circle</span>(x)
+    t.<span class="fn">left</span>(<span class="num">91</span>)</code></pre></div><div class="canvas-wrap reveal"><canvas id="circleSpiralCanvas" width="820" height="580"></canvas></div></div></div>
+      </section>
+
+      <!-- === 47: COLOR LIST === -->
+      <section class="slide surface-lav" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">教材 2.4 · 添加颜色</div><h2 class="section-title reveal editable">把颜色装进一个“队列”</h2><div class="code-panel reveal" style="margin-top:34px"><button class="copy-btn">复制代码</button><pre><code>colors = [<span class="str">"red"</span>, <span class="str">"yellow"</span>, <span class="str">"blue"</span>, <span class="str">"green"</span>]</code></pre></div><div class="grid-4 reveal"><div class="pixel-card" style="border-color:#f66"><div class="card-title">0 · red</div></div><div class="pixel-card" style="border-color:#e0b800"><div class="card-title">1 · yellow</div></div><div class="pixel-card" style="border-color:#1685ff"><div class="card-title">2 · blue</div></div><div class="pixel-card" style="border-color:#38a768"><div class="card-title">3 · green</div></div></div></div>
+      </section>
+
+      <!-- === 48: MODULO QUIZ === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">颜色轮盘 · 100 XP</div><h2 class="section-title reveal editable">colors[x % 4] 中，% 4 的作用是什么？</h2><div class="quiz reveal" data-qid="q-modulo" data-correct="c"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 把颜色放大 4 倍</button><button class="quiz-option" data-answer="b">B. 把 x 变成 4</button><button class="quiz-option" data-answer="c">C. 让编号在 0、1、2、3 循环</button></div><div class="quiz-note editable">除以 4 的余数只会是 0、1、2、3，所以颜色会不断轮换。</div></div></div>
+      </section>
+
+      <!-- === 49: COLOR SPIRAL === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">四色螺旋</div><h2 class="section-title reveal editable" style="font-size:58px">把颜色轮盘放进循环</h2><div class="grid-2 wide-right practice-grid" style="margin-top:16px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+t = turtle.<span class="fn">Pen</span>()
+colors = [<span class="str">"red"</span>,<span class="str">"yellow"</span>,<span class="str">"blue"</span>,<span class="str">"green"</span>]
+
+<span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+    t.<span class="fn">pencolor</span>(colors[x % <span class="num">4</span>])
+    t.<span class="fn">forward</span>(x)
+    t.<span class="fn">left</span>(<span class="num">91</span>)</code></pre></div><div class="canvas-wrap reveal"><canvas id="colorSpiralCanvas" width="820" height="580"></canvas></div></div><button class="award-btn interactive" data-award="150" data-task="color-spiral" style="margin-top:18px">四色螺旋完成</button></div>
+      </section>
+
+      <!-- === 50: BLACK BACKGROUND === -->
+      <section class="slide surface-pink" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">教材 2.4.2 · 修改背景颜色</div><h2 class="section-title reveal editable">黑色宇宙，让霓虹线条发光</h2><div class="grid-2 short-grid" style="margin-top:28px"><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code>turtle.<span class="fn">bgcolor</span>(<span class="str">"black"</span>)</code></pre></div><div class="pixel-card reveal"><div class="card-icon">🌌</div><div class="card-title editable">注意顺序</div><div class="card-text editable">建议放在 import 之后、开始画图之前。</div></div></div><div class="quiz reveal" data-qid="q-bgcolor" data-correct="a"><div class="quiz-options two"><button class="quiz-option" data-answer="a">A. bgcolor 改画布颜色</button><button class="quiz-option" data-answer="b">B. pencolor 改画布颜色</button></div><div class="quiz-note editable">bgcolor 是背景色；pencolor 是画笔线条颜色。</div></div></div>
+      </section>
+
+      <!-- === 51: VARIABLE SIDES === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">教材 2.5 · 一个变量搞定一切</div><h2 class="section-title reveal editable" style="font-size:58px">sides 控制边数和颜色数量</h2><div class="code-panel reveal" style="margin-top:22px"><button class="copy-btn">复制代码</button><pre><code><span class="kw">import</span> turtle
+t = turtle.<span class="fn">Pen</span>()
+turtle.<span class="fn">bgcolor</span>(<span class="str">"black"</span>)
+sides = <span class="num">6</span>
+colors = [<span class="str">"red"</span>,<span class="str">"yellow"</span>,<span class="str">"blue"</span>,<span class="str">"orange"</span>,<span class="str">"green"</span>,<span class="str">"purple"</span>]
+
+<span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">360</span>):
+    t.<span class="fn">pencolor</span>(colors[x % sides])
+    t.<span class="fn">forward</span>(x * <span class="num">3</span> / sides + x)
+    t.<span class="fn">left</span>(<span class="num">360</span> / sides + <span class="num">1</span>)
+    t.<span class="fn">width</span>(x * sides / <span class="num">200</span>)</code></pre></div></div>
+      </section>
+
+      <!-- === 52: SIDES GALLERY === -->
+      <section class="slide surface-lav" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">变量画廊</div><h2 class="section-title reveal editable" style="font-size:58px">只改 sides，图形就会变身</h2><div class="grid-2 wide-left" style="margin-top:22px"><figure class="photo-frame contain reveal"><img src="assets/book_shapes.jpg" alt="教材中 sides 不同取值的图形"><figcaption class="caption editable">教材图 2-8：sides 取不同数值</figcaption></figure><div class="code-explain reveal"><div class="code-token editable"><b>sides = 6</b>：六种颜色的旋涡</div><div class="code-token editable"><b>sides = 4</b>：方形旋转感</div><div class="code-token editable"><b>sides = 3</b>：三角风车</div><div class="code-token editable"><b>sides = 2</b>：奇怪的蝴蝶线</div><button class="award-btn interactive" data-award="150" data-task="sides-gallery">我运行了 2–6 中的三个数值</button></div></div></div>
+      </section>
+
+      <!-- === 53: ERROR HUNT === -->
+      <section class="slide surface-cyan" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">找错挑战 · 100 XP</div><h2 class="section-title reveal editable" style="font-size:58px">哪一行少了关键符号？</h2><div class="grid-2 wide-right" style="margin-top:24px"><div class="code-panel reveal"><pre><code><span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>)
+    t.<span class="fn">forward</span>(x)
+    t.<span class="fn">left</span>(<span class="num">91</span>)</code></pre></div><div class="quiz reveal" data-qid="q-colon" data-correct="a"><div class="quiz-options" style="grid-template-columns:1fr"><button class="quiz-option" data-answer="a">A. 第 1 行末尾少了冒号 :</button><button class="quiz-option" data-answer="b">B. 第 2 行少了颜色</button><button class="quiz-option" data-answer="c">C. 第 3 行数字太小</button></div><div class="quiz-note editable">for 这一行末尾必须有英文冒号，下面的重复动作还要缩进。</div></div></div></div>
+      </section>
+
+      <!-- === 54: RUBBER BALL === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">教材编程挑战 · 橡皮筋球体</div><h2 class="section-title reveal editable" style="font-size:58px">每轮再多转 90°，图形开始“打结”</h2><div class="grid-2 wide-left" style="margin-top:22px"><figure class="photo-frame contain reveal"><img src="assets/book_rubber_ball.jpg" alt="教材橡皮筋球体图形"><figcaption class="caption editable">教材图 2-9：橡皮筋球体</figcaption></figure><div><div class="code-panel reveal"><button class="copy-btn">复制代码</button><pre><code><span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(<span class="num">180</span>):
+    <span class="cm"># 原来的彩色螺旋代码</span>
+    t.<span class="fn">left</span>(<span class="num">90</span>)</code></pre></div><p class="body reveal editable" style="margin-top:30px">注意：新增的 left(90) 也在循环里面，并保持相同缩进。</p><button class="award-btn interactive" data-award="150" data-task="rubber-ball" style="margin-top:28px">橡皮筋球体出现了</button></div></div></div>
+      </section>
+
+      <!-- === 55: FINAL LAB === -->
+      <section class="slide surface-pink" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">终极互动实验室</div><h2 class="section-title reveal editable" style="font-size:58px">创造一只从未见过的“参数怪兽”</h2><div class="lab-panel"><div class="canvas-wrap"><canvas id="bossLab" width="900" height="600"></canvas></div><div class="controls"><div class="control"><label><span class="editable">边数</span><b id="bossSidesValue">6</b></label><input class="interactive" id="bossSides" type="range" min="2" max="10" value="6"></div><div class="control"><label><span class="editable">额外旋转</span><b id="bossTwistValue">1°</b></label><input class="interactive" id="bossTwist" type="range" min="0" max="95" value="1"></div><div class="control"><label><span class="editable">线宽倍率</span><b id="bossWidthValue">1.0</b></label><input class="interactive" id="bossWidth" type="range" min="2" max="18" value="8"></div><button class="award-btn interactive" data-award="200" data-task="boss-lab">保存我的最佳参数 +200 XP</button></div></div></div>
+      </section>
+
+      <!-- === 56: INDEPENDENT BUILD === -->
+      <section class="slide" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">独立创作任务 · 200 XP</div><h2 class="section-title reveal editable">完成你自己的奇异图形</h2><div class="grid-4 reveal"><div class="pixel-card"><div class="big-number" style="font-size:74px">1</div><div class="card-title editable">先运行</div><div class="card-text editable">确认教材代码能画出来</div></div><div class="pixel-card"><div class="big-number" style="font-size:74px">2</div><div class="card-title editable">改 3 处</div><div class="card-text editable">边数、颜色、角度或线宽</div></div><div class="pixel-card"><div class="big-number" style="font-size:74px">3</div><div class="card-title editable">起名字</div><div class="card-text editable">给作品一个酷名字</div></div><div class="pixel-card"><div class="big-number" style="font-size:74px">4</div><div class="card-title editable">展示</div><div class="card-text editable">说出最关键的参数</div></div></div><button class="award-btn interactive" data-award="200" data-task="independent" style="margin-top:48px">作品完成并命名</button></div>
+      </section>
+
+      <!-- === 57: EXIT QUIZ === -->
+      <section class="slide surface-cyan" data-chapter="5">
+        <div class="slide-inner"><div class="eyebrow reveal editable">离舱测验 · 100 XP</div><h2 class="section-title reveal editable">想让正八边形闭合，每次应转多少度？</h2><div class="quiz reveal" data-qid="q-octagon" data-correct="b"><div class="quiz-options"><button class="quiz-option" data-answer="a">A. 30°</button><button class="quiz-option" data-answer="b">B. 45°</button><button class="quiz-option" data-answer="c">C. 80°</button></div><div class="quiz-note editable">360 ÷ 8 = 45。今天最重要的公式：转角 = 360 ÷ 边数。</div></div><div class="callout reveal" style="margin-top:42px">请每位同学用一句话回答：今天哪一次“改参数”最让你惊讶？</div></div>
+      </section>
+
+      <!-- === 58: CLOSING AND SOURCES === -->
+      <section class="slide surface-lav" data-chapter="5">
+        <div class="slide-inner compact"><div class="eyebrow reveal editable">MISSION COMPLETE</div><h2 class="section-title reveal editable">Python 世界已解锁</h2><div class="grid-2 wide-left"><div><p class="huge-question reveal editable" style="font-size:56px">你已经会用代码画：<br>直线 · 三角形 · 多边形 · 圆 · 奇异图形</p><div class="callout reveal editable" style="margin-top:34px">下一次，我们让代码记住数字、名字和更多秘密。</div><div class="badge-row reveal"><span class="badge">🏆 最佳观察员</span><span class="badge">🧠 找错高手</span><span class="badge">🎨 参数艺术家</span></div></div><div><div class="pixel-card"><div class="card-title editable">素材与事实来源</div><div class="source-list"><a href="https://docs.python.org/3/faq/general.html" target="_blank">Python 官方 FAQ：名称由来</a><a href="https://legacy.python.org/doc/essays/ppt/jpf001/tsld006.htm" target="_blank">Python 早期历史：1989 / 1991</a><a href="https://www.computerhistory.org/babbage/history/" target="_blank">Computer History Museum：分析机</a><a href="https://www.computerhistory.org/babbage/adalovelace" target="_blank">CHM：Ada Lovelace</a><a href="https://www.computerhistory.org/timeline/1946/" target="_blank">CHM：ENIAC</a><a href="https://docs.python.org/3/library/turtle.html" target="_blank">Python 官方：turtle 与 Logo</a><a href="https://www.bilibili.com/video/BV1Dg4116726/" target="_blank">B 站：计算机的诞生与发展</a><a href="https://news.mit.edu/2016/seymour-papert-pioneer-of-constructionist-learning-dies-0801" target="_blank">MIT News：Logo Turtle</a></div></div></div></div></div>
+      </section>
+
+      <!-- === PERSISTENT SCOREBOARD === -->
+      <aside class="score-hud interactive" id="scoreHud" aria-label="8 位学员积分板">
+        <div class="score-title">PLAYER<br>XP × 8</div>
+        <button class="team-btn active" data-team="0"><span>学员 1</span><b>0 XP</b></button>
+        <button class="team-btn" data-team="1"><span>学员 2</span><b>0 XP</b></button>
+        <button class="team-btn" data-team="2"><span>学员 3</span><b>0 XP</b></button>
+        <button class="team-btn" data-team="3"><span>学员 4</span><b>0 XP</b></button>
+        <button class="team-btn" data-team="4"><span>学员 5</span><b>0 XP</b></button>
+        <button class="team-btn" data-team="5"><span>学员 6</span><b>0 XP</b></button>
+        <button class="team-btn" data-team="6"><span>学员 7</span><b>0 XP</b></button>
+        <button class="team-btn" data-team="7"><span>学员 8</span><b>0 XP</b></button>
+        <div class="score-tools"><button id="editScore" title="老师手动修改当前学员积分">±</button><button id="renameTeam" title="修改当前学员姓名">✎</button><button id="resetScore" title="重置积分">↺</button></div>
+      </aside>
+
+      <!-- === TEACHER SCORE CONTROL PANEL === -->
+      <section class="score-editor interactive" id="scoreEditor" aria-label="老师积分控制台" aria-hidden="true">
+        <div class="score-editor-head">
+          <div><div class="score-editor-kicker">TEACHER CONTROL / 老师改分</div><div class="score-editor-name" id="scoreEditorName">学员 1</div></div>
+          <button class="score-editor-close" id="closeScoreEditor" title="关闭积分控制台" aria-label="关闭">×</button>
+        </div>
+        <label for="manualScore">修改后的总积分</label>
+        <input id="manualScore" type="number" min="0" max="99999" step="10" inputmode="numeric" value="0">
+        <div class="score-deltas" aria-label="快速调整积分">
+          <button data-score-delta="-100">−100</button><button data-score-delta="-50">−50</button><button data-score-delta="-20">−20</button>
+          <button data-score-delta="+20">+20</button><button data-score-delta="+50">+50</button><button data-score-delta="+100">+100</button>
+        </div>
+        <button class="score-editor-save" id="saveManualScore">保存积分</button>
+        <div class="score-editor-hint">先在上方选择学生。积分最低为 0，修改会自动保存在本机浏览器。</div>
+      </section>
+
+      <!-- === PERSISTENT NAVIGATION CHROME === -->
+      <nav class="chapter-rail" aria-label="课程章节"><span class="chapter-dot active"></span><span class="chapter-dot"></span><span class="chapter-dot"></span><span class="chapter-dot"></span><span class="chapter-dot"></span><span class="chapter-dot"></span></nav>
+      <footer class="stage-footer"><span id="slideCounter">01 / 58</span><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><span>方向键 / 空格翻页 · 点击答题</span></footer>
+      <div class="toast" id="toast" role="status"></div>
+    </main>
+  </div>
+
+  <!-- === INLINE EDITING CONTROLS === -->
+  <div class="edit-hotzone" title="编辑模式"></div><button class="edit-toggle" id="editToggle" title="编辑模式（E）">✎</button><div class="edit-panel" id="editPanel"><button id="saveEdits">保存文字</button><button id="downloadHtml">下载当前版本</button></div>
+
+  <script>
+    /* === SHARED HELPERS === */
+    const $ = (s, root=document) => root.querySelector(s);
+    const $$ = (s, root=document) => [...root.querySelectorAll(s)];
+    const clamp = (n,min,max) => Math.max(min,Math.min(max,n));
+    const storage = {
+      get(key, fallback){ try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+      set(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
+    };
+    function reportCoursewareScore(questionId, correct, points){
+      if(window.parent===window)return;
+      window.parent.postMessage({
+        type:'growth-courseware:score',
+        lessonId:'lesson-1',
+        questionId,
+        correct,
+        points
+      },window.location.origin);
+    }
+
+    /* === SLIDE PRESENTATION CONTROLLER === */
+    class SlidePresentation {
+      constructor(){
+        this.slides = $$('.slide');
+        this.stage = $('#deckStage');
+        this.current = clamp(Number(location.hash.replace('#',''))-1 || 0,0,this.slides.length-1);
+        this.wheelLock = false;
+        this.touchY = null;
+        this.scaleStage();
+        addEventListener('resize',()=>this.scaleStage());
+        this.bindNavigation();
+        this.show(this.current,false);
+      }
+      scaleStage(){
+        const factor = Math.min(innerWidth/1920,innerHeight/1080);
+        const x=(innerWidth-1920*factor)/2, y=(innerHeight-1080*factor)/2;
+        this.stage.style.transform=`translate(${x}px,${y}px) scale(${factor})`;
+      }
+      bindNavigation(){
+        document.addEventListener('keydown',e=>{
+          const tag=e.target.tagName?.toLowerCase();
+          if(['input','button','a','iframe'].includes(tag)||e.target.isContentEditable) return;
+          if(['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)){e.preventDefault();this.next();}
+          if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){e.preventDefault();this.prev();}
+          if(e.key==='Home')this.show(0); if(e.key==='End')this.show(this.slides.length-1);
+        });
+        addEventListener('wheel',e=>{ if(this.wheelLock)return; this.wheelLock=true; e.deltaY>0?this.next():this.prev(); setTimeout(()=>this.wheelLock=false,700); },{passive:true});
+        addEventListener('touchstart',e=>this.touchY=e.touches[0].clientY,{passive:true});
+        addEventListener('touchend',e=>{ if(this.touchY===null)return; const d=this.touchY-e.changedTouches[0].clientY; if(Math.abs(d)>55)(d>0?this.next():this.prev()); this.touchY=null; },{passive:true});
+      }
+      show(i,updateHash=true){
+        this.current=clamp(i,0,this.slides.length-1);
+        this.slides.forEach((s,n)=>{s.classList.toggle('active',n===this.current);s.classList.toggle('visible',n===this.current)});
+        $('#slideCounter').textContent=`${String(this.current+1).padStart(2,'0')} / ${String(this.slides.length).padStart(2,'0')}`;
+        $('#progressFill').style.width=`${((this.current+1)/this.slides.length)*100}%`;
+        const chapter=Number(this.slides[this.current].dataset.chapter||0);
+        $$('.chapter-dot').forEach((d,n)=>d.classList.toggle('active',n===chapter));
+        if(updateHash) history.replaceState(null,'',`#${this.current+1}`);
+        drawSlideCanvases(this.slides[this.current]);
+      }
+      next(){this.show(this.current+1)} prev(){this.show(this.current-1)}
+    }
+
+    /* === STARFIELD ATMOSPHERE === */
+    function buildStars(){
+      $$('.slide:not(.surface-pink):not(.surface-cyan):not(.surface-lav)').forEach((slide,idx)=>{
+        const field=document.createElement('div'); field.className='starfield';
+        for(let i=0;i<36;i++){ const s=document.createElement('i'); s.className='star'; const colors=['#5edcf4','#f0a6ca','#f4d03f']; s.style.cssText=`left:${(i*47+idx*17)%96}%;top:${(i*73+idx*29)%92}%;background:${colors[i%3]};animation-delay:${(i%9)*.27}s`; field.appendChild(s); }
+        slide.prepend(field);
+      });
+    }
+
+    /* === TEAM SCORE SYSTEM === */
+    class ScoreSystem {
+      constructor(){
+        const defaults={active:0,names:['学员 1','学员 2','学员 3','学员 4','学员 5','学员 6','学员 7','学员 8'],scores:[0,0,0,0,0,0,0,0],answers:{},tasks:{}};
+        this.state=storage.get('turtleQuestScore',defaults);
+        while(this.state.names.length<8)this.state.names.push(`学员 ${this.state.names.length+1}`);
+        while(this.state.scores.length<8)this.state.scores.push(0);
+        this.render(); this.bind();
+      }
+      bind(){
+        $$('.team-btn').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();this.state.active=Number(btn.dataset.team);this.save();this.render();if($('#scoreEditor').classList.contains('active'))this.syncEditor()}));
+        $('#editScore').addEventListener('click',e=>{e.stopPropagation();this.openEditor()});
+        $('#closeScoreEditor').addEventListener('click',e=>{e.stopPropagation();this.closeEditor()});
+        $$('[data-score-delta]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();const input=$('#manualScore');input.value=clamp((Number(input.value)||0)+Number(btn.dataset.scoreDelta),0,99999)}));
+        $('#saveManualScore').addEventListener('click',e=>{e.stopPropagation();this.commitManualScore()});
+        $('#manualScore').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();this.commitManualScore()}if(e.key==='Escape'){e.preventDefault();this.closeEditor()}});
+        $('#renameTeam').addEventListener('click',e=>{e.stopPropagation();const name=prompt('输入当前学员姓名：',this.state.names[this.state.active]);if(name?.trim()){this.state.names[this.state.active]=name.trim().slice(0,8);this.save();this.render()}});
+        $('#resetScore').addEventListener('click',e=>{e.stopPropagation();if(confirm('确定重置 8 位学员的积分和答题记录吗？')){this.state={active:0,names:['学员 1','学员 2','学员 3','学员 4','学员 5','学员 6','学员 7','学员 8'],scores:[0,0,0,0,0,0,0,0],answers:{},tasks:{}};this.save();this.render();this.closeEditor();showToast('积分已重置')}});
+        $$('.quiz').forEach(q=>$$('.quiz-option',q).forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();this.answer(q,btn)})));
+        $$('.award-btn').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();this.claim(btn)}));
+      }
+      openEditor(){this.syncEditor();const panel=$('#scoreEditor');panel.classList.add('active');panel.setAttribute('aria-hidden','false');setTimeout(()=>$('#manualScore').select(),80)}
+      closeEditor(){const panel=$('#scoreEditor');panel.classList.remove('active');panel.setAttribute('aria-hidden','true')}
+      syncEditor(){$('#scoreEditorName').textContent=this.state.names[this.state.active];$('#manualScore').value=this.state.scores[this.state.active]}
+      commitManualScore(){const team=this.state.active,previous=this.state.scores[team],next=clamp(Math.round(Number($('#manualScore').value)||0),0,99999);this.state.scores[team]=next;this.save();this.render();this.syncEditor();const change=next-previous;showToast(`${this.state.names[team]}：${previous} → ${next} XP${change===0?'':`（${change>0?'+':''}${change}）`}`)}
+      answer(quiz,btn){
+        const qid=quiz.dataset.qid, team=this.state.active, choice=btn.dataset.answer, correct=quiz.dataset.correct;
+        this.state.answers[qid] ||= {};
+        const rec=this.state.answers[qid][team] ||= {wrong:false,correct:false};
+        if(rec.correct){showToast(`${this.state.names[team]} 已答对这题`);return;}
+        if(choice===correct){const pts=rec.wrong?80:100;rec.correct=true;this.add(pts);reportCoursewareScore(qid,true,pts);btn.classList.add('is-correct');$('.quiz-note',quiz)?.classList.add('show');showToast(`答对了！${this.state.names[team]} +${pts} XP`);}
+        else {reportCoursewareScore(qid,false,0);btn.classList.remove('is-wrong');void btn.offsetWidth;btn.classList.add('is-wrong');if(!rec.wrong){rec.wrong=true;this.add(20);showToast(`勇敢尝试！${this.state.names[team]} +20 XP，再想想`)}else showToast('再观察一下代码或图形');}
+        this.save();
+      }
+      claim(btn){
+        const team=this.state.active, task=btn.dataset.task; this.state.tasks[task] ||= {};
+        if(this.state.tasks[task][team]){showToast(`${this.state.names[team]} 已领取本关积分`);return;}
+        this.state.tasks[task][team]=true; const pts=Number(btn.dataset.award||150);this.add(pts);reportCoursewareScore(`task-${task}`,true,pts);btn.classList.add('claimed');showToast(`关卡完成！${this.state.names[team]} +${pts} XP`);this.save();
+      }
+      add(points){this.state.scores[this.state.active]+=points;this.render();const pop=document.createElement('div');pop.className='score-pop';pop.textContent=`+${points} XP`;$('#deckStage').appendChild(pop);setTimeout(()=>pop.remove(),1300)}
+      render(){ $$('.team-btn').forEach((b,i)=>{b.classList.toggle('active',i===this.state.active);$('span',b).textContent=this.state.names[i];$('b',b).textContent=`${this.state.scores[i]} XP`;}); }
+      save(){storage.set('turtleQuestScore',this.state)}
+    }
+
+    /* === QUIZ / COPY / INTERACTION UTILITIES === */
+    let toastTimer;
+    function showToast(message){const t=$('#toast');t.textContent=message;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200)}
+    function bindCopyButtons(){
+      $$('.copy-btn').forEach(btn=>btn.addEventListener('click',async e=>{e.stopPropagation();const code=btn.parentElement.querySelector('code')?.innerText||'';try{await navigator.clipboard.writeText(code);showToast('代码已复制，可粘贴到海龟编辑器')}catch{showToast('复制失败，请手动选择代码')}}));
+    }
+    function buildPunchCard(){
+      const card=$('#punchCard'); if(!card)return;
+      for(let i=0;i<60;i++){const p=document.createElement('i');p.className='punch'+([1,4,7,10,14,19,22,25,31,34,37,44,48,51,56].includes(i)?' on':'');card.appendChild(p)}
+    }
+
+    /* === CANVAS DRAWING ENGINE === */
+    const palette=['#ff4f70','#f4d03f','#5edcf4','#ff9f43','#60dd90','#b785f5'];
+    function setupCanvas(canvas,bg='#05091b'){const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle=bg;ctx.fillRect(0,0,canvas.width,canvas.height);ctx.lineCap='square';ctx.lineJoin='miter';return ctx;}
+    function drawGrid(ctx,w,h){ctx.strokeStyle='rgba(94,220,244,.08)';ctx.lineWidth=1;for(let x=0;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}for(let y=0;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}}
+    function drawPolygon(canvas,sides,radius=180,color='#5edcf4'){const c=canvas,ctx=setupCanvas(c);drawGrid(ctx,c.width,c.height);ctx.save();ctx.translate(c.width/2,c.height/2);ctx.rotate(-Math.PI/2);ctx.strokeStyle=color;ctx.lineWidth=8;ctx.shadowColor='#f0a6ca';ctx.shadowBlur=0;ctx.shadowOffsetX=10;ctx.shadowOffsetY=10;ctx.beginPath();for(let i=0;i<=sides;i++){const a=i*Math.PI*2/sides,x=Math.cos(a)*radius,y=Math.sin(a)*radius;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke();ctx.restore();drawTurtle(ctx,c.width/2+Math.cos(-Math.PI/2)*radius,c.height/2+Math.sin(-Math.PI/2)*radius,-90)}
+    function drawTurtle(ctx,x,y,deg=0){ctx.save();ctx.translate(x,y);ctx.rotate(deg*Math.PI/180);ctx.fillStyle='#60dd90';ctx.fillRect(-16,-12,32,24);ctx.fillStyle='#f4d03f';ctx.fillRect(-9,-7,18,14);ctx.fillStyle='#60dd90';ctx.fillRect(14,-6,10,12);ctx.restore()}
+    function drawLine(canvas){const ctx=setupCanvas(canvas);drawGrid(ctx,canvas.width,canvas.height);ctx.strokeStyle='#5edcf4';ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(180,canvas.height/2);ctx.lineTo(canvas.width-180,canvas.height/2);ctx.stroke();drawTurtle(ctx,canvas.width-180,canvas.height/2,0)}
+    function drawCircle(canvas){const ctx=setupCanvas(canvas);drawGrid(ctx,canvas.width,canvas.height);ctx.strokeStyle='#f4d03f';ctx.lineWidth=9;ctx.beginPath();ctx.arc(canvas.width/2,canvas.height/2,170,0,Math.PI*2);ctx.stroke();drawTurtle(ctx,canvas.width/2+170,canvas.height/2,90)}
+    function drawFlower(canvas){const ctx=setupCanvas(canvas);drawGrid(ctx,canvas.width,canvas.height);ctx.translate(canvas.width/2,canvas.height/2);ctx.lineWidth=4;for(let i=0;i<12;i++){ctx.save();ctx.rotate(i*Math.PI/6);ctx.strokeStyle=palette[i%palette.length];ctx.beginPath();ctx.arc(0,-90,90,0,Math.PI*2);ctx.stroke();ctx.restore()}}
+    function drawSquareSpiral(canvas,angle=90,colored=false,steps=100){const ctx=setupCanvas(canvas);drawGrid(ctx,canvas.width,canvas.height);let x=canvas.width/2,y=canvas.height/2,heading=0;ctx.lineWidth=3;for(let i=0;i<steps;i++){const len=i*2.25,nx=x+Math.cos(heading)*len,ny=y+Math.sin(heading)*len;ctx.strokeStyle=colored?palette[i%palette.length]:'#5edcf4';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(nx,ny);ctx.stroke();x=nx;y=ny;heading-=angle*Math.PI/180}drawTurtle(ctx,x,y,-heading*180/Math.PI)}
+    function drawCircleSpiral(canvas,colored=false){const ctx=setupCanvas(canvas);drawGrid(ctx,canvas.width,canvas.height);ctx.save();ctx.translate(canvas.width/2,canvas.height/2);ctx.lineWidth=2.4;for(let i=4;i<84;i+=2){ctx.rotate(91*Math.PI/180);ctx.strokeStyle=colored?palette[i%palette.length]:'#f0a6ca';ctx.beginPath();ctx.arc(0,-i*.72,i*.72,0,Math.PI*2);ctx.stroke()}ctx.restore()}
+    function drawBoss(canvas,sides=6,twist=1,width=8){const ctx=setupCanvas(canvas);drawGrid(ctx,canvas.width,canvas.height);let x=canvas.width/2,y=canvas.height/2,heading=0;for(let i=0;i<220;i++){const len=(i*1.1/sides+i*.23),nx=x+Math.cos(heading)*len,ny=y+Math.sin(heading)*len;ctx.strokeStyle=palette[i%sides%palette.length];ctx.lineWidth=Math.max(1,i*sides/200*(width/8));ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(nx,ny);ctx.stroke();x=nx;y=ny;heading-=(360/sides+twist)*Math.PI/180;if(x<40||x>canvas.width-40||y<40||y>canvas.height-40){x=canvas.width/2;y=canvas.height/2}}}
+    function drawSlideCanvases(slide){
+      const id=slide.querySelector('canvas')?.id;
+      if(!id)return;
+      if(id==='lineCanvas')drawLine($('#lineCanvas'));
+      if(id==='triangleCanvas')drawPolygon($('#triangleCanvas'),3,190,'#f4d03f');
+      if(id==='squareCanvas')drawPolygon($('#squareCanvas'),4,190,'#5edcf4');
+      if(id==='circleCanvas')drawCircle($('#circleCanvas'));
+      if(id==='flowerCanvas')drawFlower($('#flowerCanvas'));
+      if(id==='squareSpiralCanvas')drawSquareSpiral($('#squareSpiralCanvas'),90,false,100);
+      if(id==='angle90Canvas'){drawSquareSpiral($('#angle90Canvas'),90,false,82);drawSquareSpiral($('#angle91Canvas'),91,true,82)}
+      if(id==='circleSpiralCanvas')drawCircleSpiral($('#circleSpiralCanvas'));
+      if(id==='colorSpiralCanvas')drawSquareSpiral($('#colorSpiralCanvas'),91,true,105);
+      if(id==='polygonLab')updatePolygonLab(); if(id==='angleLab')updateAngleLab(); if(id==='bossLab')updateBossLab();
+    }
+    function updatePolygonLab(){const s=Number($('#polySides').value);$('#polySidesValue').textContent=s;$('#polyAngleValue').textContent=`${(360/s).toFixed(s>6?1:0)}°`;drawPolygon($('#polygonLab'),s,220,palette[s%palette.length])}
+    function updateAngleLab(){const a=Number($('#angleSlider').value);$('#angleLabValue').textContent=`${a}°`;drawSquareSpiral($('#angleLab'),a,true,105)}
+    function updateBossLab(){const s=Number($('#bossSides').value),t=Number($('#bossTwist').value),w=Number($('#bossWidth').value);$('#bossSidesValue').textContent=s;$('#bossTwistValue').textContent=`${t}°`;$('#bossWidthValue').textContent=(w/8).toFixed(1);drawBoss($('#bossLab'),s,t,w)}
+    function bindLabs(){
+      $('#polySides')?.addEventListener('input',updatePolygonLab);$('#angleSlider')?.addEventListener('input',updateAngleLab);['#bossSides','#bossTwist','#bossWidth'].forEach(s=>$(s)?.addEventListener('input',updateBossLab));
+    }
+
+    /* === BREAK TIMER === */
+    class BreakTimer {
+      constructor(){this.remaining=600;this.id=null;this.render();$$('[data-timer]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();this.action(b.dataset.timer)}));}
+      action(a){if(a==='start'&&!this.id)this.id=setInterval(()=>{this.remaining=Math.max(0,this.remaining-1);this.render();if(!this.remaining){clearInterval(this.id);this.id=null;showToast('休息结束，海龟探险继续！')}},1000);if(a==='pause'){clearInterval(this.id);this.id=null}if(a==='reset'){clearInterval(this.id);this.id=null;this.remaining=600;this.render()}}
+      render(){const m=Math.floor(this.remaining/60),s=this.remaining%60;$('#breakTimer').textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`}
+    }
+
+    /* === INLINE TEXT EDITOR === */
+    class InlineEditor {
+      constructor(){this.active=false;this.edits=storage.get('turtleQuestEdits',{});$$('.editable').forEach((el,i)=>{el.dataset.editId=i;if(this.edits[i])el.innerHTML=this.edits[i]});this.bind();}
+      bind(){
+        const hot=$('.edit-hotzone'),toggle=$('#editToggle');let hide;
+        hot.addEventListener('mouseenter',()=>{clearTimeout(hide);toggle.classList.add('show')});hot.addEventListener('mouseleave',()=>hide=setTimeout(()=>{if(!this.active)toggle.classList.remove('show')},400));toggle.addEventListener('mouseenter',()=>clearTimeout(hide));toggle.addEventListener('mouseleave',()=>hide=setTimeout(()=>{if(!this.active)toggle.classList.remove('show')},400));hot.addEventListener('click',()=>this.toggle());toggle.addEventListener('click',()=>this.toggle());
+        document.addEventListener('keydown',e=>{if((e.key==='e'||e.key==='E')&&!e.target.isContentEditable&&!['INPUT','BUTTON'].includes(e.target.tagName))this.toggle()});
+        $('#saveEdits').addEventListener('click',()=>this.save());$('#downloadHtml').addEventListener('click',()=>this.download());
+      }
+      toggle(){this.active=!this.active;document.body.classList.toggle('editing',this.active);$('#editToggle').classList.toggle('active',this.active);$('#editPanel').classList.toggle('active',this.active);$$('.editable').forEach(el=>el.contentEditable=this.active?'true':'false');showToast(this.active?'编辑模式已开启':'编辑模式已关闭')}
+      save(){this.edits={};$$('.editable').forEach(el=>this.edits[el.dataset.editId]=el.innerHTML);storage.set('turtleQuestEdits',this.edits);showToast('文字修改已保存在本机浏览器')}
+      download(){this.save();const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;const blob=new Blob([html],{type:'text/html;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Python暑假第一课_海龟探险队_修改版.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+    }
+
+    /* === INITIALIZATION === */
+    buildStars(); buildPunchCard(); bindCopyButtons(); bindLabs();
+    const scoreSystem=new ScoreSystem(); const breakTimer=new BreakTimer(); const editor=new InlineEditor(); const deck=new SlidePresentation();
+    $$('.interactive,button,input,a,iframe').forEach(el=>el.addEventListener('click',e=>e.stopPropagation()));
+  </script>
+</body>
+</html>

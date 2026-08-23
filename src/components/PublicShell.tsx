@@ -1,4 +1,4 @@
-import { BookOpen, LockKeyhole } from 'lucide-react'
+import { BookOpen, Gamepad2, LockKeyhole } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -13,6 +13,7 @@ export default function PublicShell({ children }: { children: ReactNode }) {
             <small>每一步，都算数</small>
           </span>
         </Link>
+        <Link to="/student/login" className="public-student-link"><Gamepad2 /> 学生登录</Link>
       </header>
       <main>{children}</main>
       <footer className="public-footer">

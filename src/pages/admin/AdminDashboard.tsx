@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, ClipboardList, ExternalLink, GraduationCap, LayoutDashboard, LogOut, Plus, Settings, UsersRound } from 'lucide-react'
+import { BookOpenText, ChevronDown, ClipboardList, ExternalLink, Gamepad2, GraduationCap, LayoutDashboard, LogOut, Plus, Settings, UsersRound } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -11,14 +11,16 @@ import AdminOverview from './panels/AdminOverview'
 import StudentsPanel from './panels/StudentsPanel'
 import LessonsPanel from './panels/LessonsPanel'
 import HomeworkPanel from './panels/HomeworkPanel'
+import StudentPortalPanel from './panels/StudentPortalPanel'
 
-type Tab = 'overview' | 'students' | 'lessons' | 'homework'
+type Tab = 'overview' | 'students' | 'lessons' | 'homework' | 'student_portal'
 
 const navItems = [
   { id: 'overview' as const, label: '工作台', icon: LayoutDashboard },
   { id: 'students' as const, label: '学生档案', icon: UsersRound },
   { id: 'lessons' as const, label: '课程与评价', icon: BookOpenText },
   { id: 'homework' as const, label: '每日作业', icon: ClipboardList },
+  { id: 'student_portal' as const, label: '学生端管理', icon: Gamepad2 },
 ]
 
 export default function AdminDashboard() {
@@ -105,6 +107,7 @@ export default function AdminDashboard() {
           {tab === 'students' && <StudentsPanel classId={classId} />}
           {tab === 'lessons' && <LessonsPanel classId={classId} termId={termId} />}
           {tab === 'homework' && <HomeworkPanel classId={classId} termId={termId} />}
+          {tab === 'student_portal' && <StudentPortalPanel classId={classId} />}
         </main>
       </div>
 
