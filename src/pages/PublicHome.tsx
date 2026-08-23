@@ -1,6 +1,6 @@
 import { ArrowRight, BookHeart, Code2, Orbit, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import PublicShell from '../components/PublicShell'
 import { EmptyState, ErrorState, PageLoader, SetupNotice } from '../components/States'
 import { getClasses } from '../lib/data'
@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import type { ClassGroup } from '../lib/types'
 
 export default function PublicHome() {
+  const navigate = useNavigate()
   const [classes, setClasses] = useState<ClassGroup[]>([])
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [error, setError] = useState('')
@@ -16,6 +17,15 @@ export default function PublicHome() {
     if (!isSupabaseConfigured) return
     getClasses().then(setClasses).catch((reason: Error) => setError(reason.message)).finally(() => setLoading(false))
   }, [])
+
+  const openClass = () => {
+    const firstClass = classes[0]
+    if (firstClass) {
+      navigate(`/class/${firstClass.id}`)
+      return
+    }
+    document.getElementById('choose-class')?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   return (
     <PublicShell>
@@ -28,7 +38,7 @@ export default function PublicHome() {
           <span className="eyebrow"><Sparkles size={16} /> 编程成长档案</span>
           <h1>看见每一次<br /><em>“我会了！”</em></h1>
           <p>课程不只留下知识，也留下孩子思考、专注、创造与坚持的每一个瞬间。</p>
-          <a href="#choose-class" className="primary-button">选择班级 <ArrowRight size={18} /></a>
+          <button type="button" className="primary-button" onClick={openClass}>选择班级 <ArrowRight size={18} /></button>
         </div>
         <div className="hero-illustration" aria-hidden="true">
           <div className="code-card code-card-one"><Code2 /><span>想一想</span></div>

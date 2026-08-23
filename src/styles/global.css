@@ -39,7 +39,7 @@ img, video { max-width: 100%; }
 .brand small { color: var(--muted); font-size: 10px; letter-spacing: .24em; }
 .section-pad { width: min(1180px, calc(100% - 44px)); margin-inline: auto; }
 .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #5c6863; font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.primary-button { min-height: 50px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 23px; border: 2px solid var(--ink); border-radius: 999px; background: var(--orange); color: var(--ink); font-weight: 800; box-shadow: 4px 5px 0 var(--ink); transition: .2s ease; }
+.primary-button { min-height: 50px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 23px; border: 2px solid var(--ink); border-radius: 999px; background: var(--orange); color: var(--ink); cursor: pointer; font-weight: 800; box-shadow: 4px 5px 0 var(--ink); transition: .2s ease; }
 .primary-button:hover { transform: translate(2px, 2px); box-shadow: 2px 3px 0 var(--ink); }
 .back-link { display: inline-flex; align-items: center; gap: 7px; color: #69756f; font-size: 13px; font-weight: 700; }
 .back-link:hover { color: var(--blue); }
