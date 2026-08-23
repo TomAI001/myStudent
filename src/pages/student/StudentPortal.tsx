@@ -104,13 +104,15 @@ function Classroom({ studentName, points, studentProgress, completionSignal, onB
   const lesson = demoLessons.find((item) => item.id === lessonId) ?? demoLessons[0]
   const lessons = demoLessons.map((item, index) => {
     const completed = studentProgress.completedLessonIds.includes(item.id)
-    const unlocked = index === 0 || studentProgress.completedLessonIds.includes(demoLessons[index - 1].id)
+    const unlocked = item.status === 'current' || index === 0 || studentProgress.completedLessonIds.includes(demoLessons[index - 1].id)
     return { ...item, status: completed ? 'completed' as const : unlocked ? 'current' as const : 'locked' as const }
   })
   const activeLessonProgress = studentProgress.lessonProgress[lesson.id]
   const coursewareSrc = lesson.id === 'lesson-1'
     ? `${import.meta.env.BASE_URL}courseware/no.1/index.html`
-    : `${import.meta.env.BASE_URL}demo-courseware.html`
+    : lesson.id === 'lesson-2'
+      ? `${import.meta.env.BASE_URL}courseware/no.2/index.html`
+      : `${import.meta.env.BASE_URL}demo-courseware.html`
   const leaderboard = useMemo(() => [...baseLeaderboard, { id: 'me', name: studentName, points, color: '#83ed9b', me: true }].sort((a, b) => b.points - a.points), [points, studentName])
 
   useEffect(() => {

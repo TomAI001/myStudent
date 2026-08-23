@@ -90,7 +90,7 @@ export const demoClass = {
 
 export const demoLessons = [
   { id: 'lesson-1', sequence: 1, title: '海龟探险队', subtitle: '计算机故事、Python 与 Turtle 图形创作', status: 'current' as const },
-  { id: 'lesson-2', sequence: 2, title: '让程序学会做选择', subtitle: '条件判断与闯关小游戏', status: 'locked' as const },
+  { id: 'lesson-2', sequence: 2, title: '星光绘图师', subtitle: '五角星、画笔移动、颜色填充与五星红旗', status: 'current' as const },
   { id: 'lesson-3', sequence: 3, title: '重复的事情交给循环', subtitle: 'for 循环与数字图案', status: 'locked' as const },
   { id: 'lesson-4', sequence: 4, title: '海龟画笔出发', subtitle: 'Turtle 图形创作', status: 'locked' as const },
 ]

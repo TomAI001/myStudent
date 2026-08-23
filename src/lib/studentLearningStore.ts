@@ -128,13 +128,48 @@ const STORE_KEY = 'growth-journal-learning-state-v3'
 const LEGACY_STORE_KEY = 'growth-journal-learning-state-v2'
 const changeEvent = 'growth-learning-state-change'
 
+const lessonTwoAssessment: Assessment = {
+  id: 'assessment-turtle-stars-02',
+  classId: 'python-summer',
+  title: '第二课 · 星光绘图师挑战',
+  description: '从五角星、颜色填充和画笔移动出发，穿插 Python 英语单词闯关。',
+  kind: 'course',
+  durationMinutes: 20,
+  maxAttempts: 3,
+  startAt: '2026-08-23T08:00',
+  endAt: '2027-08-30T22:00',
+  published: true,
+  questions: [
+    { id: 'stars-angle', type: 'choice', title: '画五角星时，哪句代码能让海龟转向下一个尖角？', options: ['t.right(72)', 't.right(90)', 't.right(144)', 't.right(180)'], answer: 't.right(144)', points: 10 },
+    { id: 'stars-fill-order', type: 'choice', title: '哪组代码能正确包住需要填充的图形？', options: ['end_fill() → 画图形 → begin_fill()', 'begin_fill() → 画图形 → end_fill()', '画图形 → begin_fill() → end_fill()', 'begin_fill() → end_fill() → 画图形'], answer: 'begin_fill() → 画图形 → end_fill()', points: 10 },
+    { id: 'stars-move-clean', type: 'choice', title: '移动到新位置时，哪组代码不会留下连接线？', options: ['pendown() → goto() → penup()', 'goto() → penup() → pendown()', 'penup() → goto() → pendown()', 'forward() → goto() → right()'], answer: 'penup() → goto() → pendown()', points: 10 },
+    { id: 'stars-size', type: 'choice', title: '调用 draw_star(x, y, size) 时，哪个参数控制星星大小？', options: ['x', 'y', 'size', 'draw_star'], answer: 'size', points: 10 },
+    { id: 'stars-color-tool', type: 'choice', title: '想把星星内部填成金色，应该先使用哪句代码？', options: ['t.pencolor("gold")', 't.fillcolor("gold")', 't.bgcolor("gold")', 't.speed("gold")'], answer: 't.fillcolor("gold")', points: 10 },
+    { id: 'word-forward', type: 'choice', title: '【英语单词】forward 在海龟代码中表示什么？', options: ['向前移动', '向右转', '抬起画笔', '填充颜色'], answer: '向前移动', points: 10 },
+    { id: 'word-penup', type: 'blank', title: '【英语填空】“抬笔、不画线”的命令是 t.____()。', answer: 'penup', points: 10 },
+    { id: 'word-goto', type: 'choice', title: '【英语单词】哪一个单词表示“移动到指定坐标”？', options: ['circle', 'range', 'goto', 'pensize'], answer: 'goto', points: 10 },
+    { id: 'word-end-fill', type: 'blank', title: '【英语填空】结束并完成颜色填充的命令是 ____()。', answer: 'end_fill', points: 10 },
+    { id: 'word-circle', type: 'choice', title: '【英语单词】哪句代码可以绘制半径为100的圆？', options: ['t.circle(100)', 't.forward(100)', 't.goto(100)', 't.range(100)'], answer: 't.circle(100)', points: 10 },
+  ],
+}
+
+const lessonTwoPackage: CoursewarePackage = {
+  id: 'courseware-lesson-02',
+  classId: 'python-summer',
+  title: '第二课 · 星光绘图师',
+  fileName: 'lesson-02-stars.zip',
+  openAt: '2026-08-23T08:00',
+  published: true,
+  createdAt: '2026-08-23T08:00:00',
+}
+
 const demoState: LearningState = {
   teachers: [
     { id: 'teacher-owner', name: '主管理员', email: 'admin@example.com', role: 'owner', classIds: ['*'], active: true },
     { id: 'teacher-tom', name: 'Tom 老师', email: 'tom@example.com', role: 'teacher', classIds: ['python-summer'], active: true },
   ],
   accounts: [],
-  assessments: [{
+  assessments: [lessonTwoAssessment, {
     id: 'assessment-python-01', classId: 'python-summer', title: 'Python 小勇士阶段测评', description: '选择题、判断题、程序填空和编程题综合挑战。', kind: 'course', durationMinutes: 30, maxAttempts: 2,
     startAt: '2026-08-01T08:00', endAt: '2027-08-30T22:00', published: true,
     questions: [
@@ -155,7 +190,7 @@ const demoState: LearningState = {
     { id: 'activity-1', title: '校园科技节创意作品征集', description: '带上你的 Python 作品，在科技节展示奇思妙想。', date: '2026-09-20', registrationType: 'internal', registeredStudentIds: [] },
     { id: 'activity-2', title: '蓝桥杯青少组赛事资讯', description: '查看比赛介绍、组别和最新活动安排。', date: '2026-10-12', registrationType: 'external', externalUrl: 'https://dasai.lanqiao.cn/', registeredStudentIds: [] },
   ],
-  coursewarePackages: [{ id: 'courseware-demo', classId: 'python-summer', title: '让程序学会做选择', fileName: 'demo-courseware.zip', openAt: '2026-08-20T08:00', published: true, createdAt: '2026-08-19T12:00:00' }],
+  coursewarePackages: [lessonTwoPackage, { id: 'courseware-demo', classId: 'python-summer', title: '让程序学会做选择', fileName: 'demo-courseware.zip', openAt: '2026-08-20T08:00', published: false, createdAt: '2026-08-19T12:00:00' }],
 }
 
 function cloneDemo() { return JSON.parse(JSON.stringify(demoState)) as LearningState }
@@ -166,6 +201,14 @@ export function getLearningState(): LearningState {
     const raw = window.localStorage.getItem(STORE_KEY)
     const state = raw ? { ...cloneDemo(), ...(JSON.parse(raw) as Partial<LearningState>) } : cloneDemo()
     state.accounts = []
+    const lessonTwoIndex = state.assessments.findIndex((item) => item.id === lessonTwoAssessment.id)
+    if (lessonTwoIndex < 0) state.assessments.unshift(JSON.parse(JSON.stringify(lessonTwoAssessment)) as Assessment)
+    else state.assessments[lessonTwoIndex] = JSON.parse(JSON.stringify(lessonTwoAssessment)) as Assessment
+    const oldDemoAssessment = state.assessments.find((item) => item.id === 'assessment-python-01')
+    if (oldDemoAssessment) oldDemoAssessment.published = false
+    const lessonTwoPackageIndex = state.coursewarePackages.findIndex((item) => item.id === lessonTwoPackage.id)
+    if (lessonTwoPackageIndex < 0) state.coursewarePackages.unshift({ ...lessonTwoPackage })
+    else state.coursewarePackages[lessonTwoPackageIndex] = { ...lessonTwoPackage }
     return state
   } catch { return cloneDemo() }
 }
