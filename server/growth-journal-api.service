@@ -1,0 +1,20 @@
+[Unit]
+Description=Growth Journal Student Account API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/growth-journal-api
+EnvironmentFile=/etc/growth-journal-api.env
+ExecStart=/opt/growth-journal-api/venv/bin/gunicorn --workers 2 --threads 4 --timeout 320 --bind 127.0.0.1:8001 "app:create_app()"
+Restart=always
+RestartSec=3
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+

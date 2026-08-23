@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { deleteUploadedFile } from './uploads'
 import type {
   ClassGroup,
   Homework,
@@ -116,8 +117,11 @@ export async function addMedia(payload: Omit<MediaItem, 'id' | 'created_at'>) {
 }
 
 export async function removeMedia(item: MediaItem) {
-  const { error: storageError } = await supabase.storage.from('student-media').remove([item.storage_path])
-  fail(storageError)
+  const removedFromServer = await deleteUploadedFile(item.storage_path)
+  if (!removedFromServer) {
+    const { error: storageError } = await supabase.storage.from('student-media').remove([item.storage_path])
+    fail(storageError)
+  }
   const { error } = await supabase.from('media').delete().eq('id', item.id)
   fail(error)
 }

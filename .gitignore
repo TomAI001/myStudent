@@ -4,4 +4,7 @@ dist
 .env.local
 .DS_Store
 tmp/
+.server-test-deps*/
 *.log
+__pycache__/
+*.pyc

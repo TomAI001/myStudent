@@ -1,11 +1,14 @@
-export const STUDENT_SESSION_KEY = 'growth-journal-student-session'
 const STUDENT_PROGRESS_KEY = 'growth-journal-student-progress'
 
-export interface StudentSession {
-  studentId: string
-  studentName: string
-  username: string
-}
+import {
+  changeStudentPasswordOnServer,
+  getStudentServerSession,
+  loginStudentOnServer,
+  logoutStudentOnServer,
+  type StudentServerSession,
+} from './serverApi'
+
+export type StudentSession = StudentServerSession
 
 export interface StudentProgress {
   points: number
@@ -20,26 +23,10 @@ export interface LessonProgress {
   percent: number
   completed: boolean
 }
-import { getStudentAccount } from './studentLearningStore'
-
-export function loginStudent(username: string, password: string): StudentSession | null {
-  const account = getStudentAccount(username, password)
-  if (!account) return null
-  const session = { studentId: account.id, studentName: account.studentName, username: account.username }
-  window.localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify(session))
-  return session
-}
-
-export function getStudentSession(): StudentSession | null {
-  const raw = window.localStorage.getItem(STUDENT_SESSION_KEY)
-  if (!raw) return null
-  try { return JSON.parse(raw) as StudentSession }
-  catch { window.localStorage.removeItem(STUDENT_SESSION_KEY); return null }
-}
-
-export function logoutStudent() {
-  window.localStorage.removeItem(STUDENT_SESSION_KEY)
-}
+export const loginStudent = loginStudentOnServer
+export const getStudentSession = getStudentServerSession
+export const logoutStudent = logoutStudentOnServer
+export const changeStudentPassword = changeStudentPasswordOnServer
 
 export function getStudentProgress(studentId: string): StudentProgress {
   try {

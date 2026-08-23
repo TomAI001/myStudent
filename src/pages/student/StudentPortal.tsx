@@ -1,12 +1,12 @@
 import { ArrowLeft, BookOpen, CheckCircle2, ChevronRight, CircleHelp, ClipboardCheck, Code2, Crown, Gamepad2, ImageUp, KeyRound, LockKeyhole, LogOut, Maximize2, Medal, MessageCircleMore, Minimize2, Play, Settings, Sparkles, Star, Trophy, UserRound, Zap } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { PageLoader } from '../../components/States'
 import PythonLab from './PythonLab'
-import { awardQuestionPoints, baseLeaderboard, demoClass, demoLessons, getStudentProgress, getStudentSession, logoutStudent, saveLessonProgress, type StudentProgress } from '../../lib/studentPortal'
+import { awardQuestionPoints, baseLeaderboard, changeStudentPassword, demoClass, demoLessons, getStudentProgress, getStudentSession, logoutStudent, saveLessonProgress, type StudentProgress, type StudentSession } from '../../lib/studentPortal'
 import AssessmentCenter from './AssessmentCenter'
 import HomeworkCenter from './HomeworkCenter'
 import CommunitySquare from './CommunitySquare'
-import { changeStudentPassword } from '../../lib/studentLearningStore'
 
 type View = 'lobby' | 'classroom' | 'assessment' | 'homework' | 'square'
 type ScoreMessage = { type: 'growth-courseware:score'; questionId: string; correct: boolean; points: number }
@@ -22,15 +22,21 @@ const modules = [
 ]
 
 export default function StudentPortal() {
-  const navigate = useNavigate(); const session = getStudentSession()
+  const navigate = useNavigate()
+  const [session, setSession] = useState<StudentSession | null | undefined>(undefined)
   const [view, setView] = useState<View>('lobby')
-  const [studentProgress, setStudentProgress] = useState<StudentProgress>(() => session ? getStudentProgress(session.studentId) : { points: 0, answeredQuestionIds: [], completedLessonIds: [], lessonProgress: {} })
+  const [studentProgress, setStudentProgress] = useState<StudentProgress>({ points: 0, answeredQuestionIds: [], completedLessonIds: [], lessonProgress: {} })
   const [completionSignal, setCompletionSignal] = useState<CompletionSignal>(null)
   const [toast, setToast] = useState('')
   const [passwordOpen, setPasswordOpen] = useState(false)
   const points = studentProgress.points
 
-  useEffect(() => { if (!session) navigate('/student/login', { replace: true }) }, [navigate, session])
+  useEffect(() => {
+    getStudentSession().then((next) => {
+      if (!next) navigate('/student/login', { replace: true })
+      else { setSession(next); setStudentProgress(getStudentProgress(next.studentId)) }
+    }).catch(() => navigate('/student/login', { replace: true }))
+  }, [navigate])
   useEffect(() => {
     const receive = (event: MessageEvent<CoursewareMessage>) => {
       if (event.origin !== window.location.origin || !session || !event.data?.type) return
@@ -56,8 +62,9 @@ export default function StudentPortal() {
     window.addEventListener('message', receive); return () => window.removeEventListener('message', receive)
   }, [session])
 
+  if (session === undefined) return <div className="admin-loading"><PageLoader label="正在进入冒险大厅…" /></div>
   if (!session) return null
-  const leave = () => { logoutStudent(); navigate('/student/login', { replace: true }) }
+  const leave = async () => { await logoutStudent(); navigate('/student/login', { replace: true }) }
 
   return (
     <div className="quest-app">
@@ -71,7 +78,7 @@ export default function StudentPortal() {
       {view === 'assessment' && <AssessmentCenter studentId={session.studentId} onBack={() => setView('lobby')} />}
       {view === 'homework' && <HomeworkCenter studentId={session.studentId} studentName={session.studentName} onBack={() => setView('lobby')} />}
       {view === 'square' && <CommunitySquare studentId={session.studentId} studentName={session.studentName} onBack={() => setView('lobby')} />}
-      {passwordOpen && <PasswordModal studentId={session.studentId} onClose={() => setPasswordOpen(false)} />}
+      {passwordOpen && <PasswordModal onClose={() => setPasswordOpen(false)} />}
     </div>
   )
 }
@@ -84,10 +91,10 @@ function Lobby({ studentName, points, completedLessons, onOpen }: { studentName:
   </main>
 }
 
-function PasswordModal({ studentId, onClose }: { studentId:string; onClose:()=>void }) {
-  const [current,setCurrent]=useState(''); const [next,setNext]=useState(''); const [confirm,setConfirm]=useState(''); const [message,setMessage]=useState('')
-  const submit=(event:React.FormEvent)=>{event.preventDefault();if(next.length<6)return setMessage('新密码至少需要 6 位。');if(next!==confirm)return setMessage('两次输入的新密码不一致。');if(!changeStudentPassword(studentId,current,next))return setMessage('当前密码不正确。');window.alert('密码修改成功，请使用新密码登录。');onClose()}
-  return <div className="quest-modal-backdrop" onMouseDown={(event)=>{if(event.currentTarget===event.target)onClose()}}><form className="password-modal" onSubmit={submit}><span><KeyRound/></span><h2>修改登录密码</h2><p>忘记密码时，请联系老师在教师端重置。</p><label>当前密码<input type="password" value={current} onChange={(event)=>setCurrent(event.target.value)} required/></label><label>新密码<input type="password" value={next} onChange={(event)=>setNext(event.target.value)} required/></label><label>再次输入新密码<input type="password" value={confirm} onChange={(event)=>setConfirm(event.target.value)} required/></label>{message&&<em>{message}</em>}<div><button type="button" onClick={onClose}>取消</button><button type="submit">确认修改</button></div></form></div>
+function PasswordModal({ onClose }: { onClose:()=>void }) {
+  const [current,setCurrent]=useState(''); const [next,setNext]=useState(''); const [confirm,setConfirm]=useState(''); const [message,setMessage]=useState(''); const [saving,setSaving]=useState(false)
+  const submit=async(event:React.FormEvent)=>{event.preventDefault();if(next.length<6)return setMessage('新密码至少需要 6 位。');if(next!==confirm)return setMessage('两次输入的新密码不一致。');setSaving(true);setMessage('');try{await changeStudentPassword(current,next);window.alert('密码修改成功。');onClose()}catch(reason){setMessage(reason instanceof Error?reason.message:'密码修改失败。')}finally{setSaving(false)}}
+  return <div className="quest-modal-backdrop" onMouseDown={(event)=>{if(event.currentTarget===event.target)onClose()}}><form className="password-modal" onSubmit={submit}><span><KeyRound/></span><h2>修改登录密码</h2><p>忘记密码时，请联系老师在教师端重置。</p><label>当前密码<input type="password" value={current} onChange={(event)=>setCurrent(event.target.value)} required/></label><label>新密码<input type="password" value={next} onChange={(event)=>setNext(event.target.value)} required/></label><label>再次输入新密码<input type="password" value={confirm} onChange={(event)=>setConfirm(event.target.value)} required/></label>{message&&<em>{message}</em>}<div><button type="button" onClick={onClose}>取消</button><button type="submit" disabled={saving}>{saving?'保存中…':'确认修改'}</button></div></form></div>
 }
 
 function Classroom({ studentName, points, studentProgress, completionSignal, onBack }: { studentName: string; points: number; studentProgress: StudentProgress; completionSignal: CompletionSignal; onBack: () => void }) {

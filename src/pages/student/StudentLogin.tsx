@@ -8,14 +8,21 @@ export default function StudentLogin() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => { if (getStudentSession()) navigate('/student/app', { replace: true }) }, [navigate])
+  useEffect(() => {
+    getStudentSession().then((session) => session && navigate('/student/app', { replace: true }))
+  }, [navigate])
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const session = loginStudent(username, password)
-    if (!session) return setError('账号或密码不正确，再检查一下吧。')
-    navigate('/student/app', { replace: true })
+    setLoading(true); setError('')
+    try {
+      await loginStudent(username, password)
+      navigate('/student/app', { replace: true })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '暂时无法登录，请稍后再试。')
+    } finally { setLoading(false) }
   }
 
   return (
@@ -36,9 +43,9 @@ export default function StudentLogin() {
             <label><span>学生账号</span><div><UserRound /><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入学生账号" autoComplete="username" required /></div></label>
             <label><span>登录密码</span><div><KeyRound /><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入登录密码" autoComplete="current-password" required /></div></label>
             {error && <p className="quest-form-error">{error}</p>}
-            <button type="submit" className="quest-launch"><span>进入冒险大厅</span><Rocket /></button>
+            <button type="submit" className="quest-launch" disabled={loading}><span>{loading ? '正在验证…' : '进入冒险大厅'}</span><Rocket /></button>
           </form>
-          <div className="quest-demo-tip"><strong>本地体验账号</strong><span>student01</span><b>/</b><span>123456</span></div>
+          <div className="quest-demo-tip"><strong>体验账号</strong><span>student01</span><b>/</b><span>123456</span></div>
         </section>
       </main>
     </div>

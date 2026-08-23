@@ -5,7 +5,7 @@ import { EmptyState, PageLoader } from '../../../components/States'
 import { getStudents } from '../../../lib/data'
 import { supabase } from '../../../lib/supabase'
 import type { Student } from '../../../lib/types'
-import { uploadPublicFile } from '../../../lib/uploads'
+import { deleteUploadedFile, uploadPublicFile } from '../../../lib/uploads'
 
 const emptyForm = { name: '', joined_on: '', avatar_url: null as string | null, avatar_path: null as string | null }
 
@@ -50,7 +50,10 @@ export default function StudentsPanel({ classId }: { classId: string }) {
 
   const remove = async (student: Student) => {
     if (!window.confirm(`确定删除“${student.name}”吗？该学生的评价和媒体记录也会一并删除。`)) return
-    if (student.avatar_path) await supabase.storage.from('student-media').remove([student.avatar_path])
+    if (student.avatar_path) {
+      const removedFromServer = await deleteUploadedFile(student.avatar_path)
+      if (!removedFromServer) await supabase.storage.from('student-media').remove([student.avatar_path])
+    }
     const { error } = await supabase.from('students').delete().eq('id', student.id)
     if (error) window.alert(error.message); else await load()
   }

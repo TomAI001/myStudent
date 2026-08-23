@@ -1,11 +1,6 @@
-import { supabase } from './supabase'
+import { deleteMediaFromServer, uploadMediaToServer } from './serverApi'
 
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024
-
-function safeName(name: string) {
-  const extension = name.split('.').pop()?.toLowerCase() || 'bin'
-  return `${crypto.randomUUID()}.${extension.replace(/[^a-z0-9]/g, '')}`
-}
 
 export async function compressImage(file: File, maxSide = 1800): Promise<File> {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file
@@ -33,13 +28,11 @@ export async function uploadPublicFile(file: File, folder: string) {
   }
 
   const prepared = file.type.startsWith('image/') ? await compressImage(file) : file
-  const path = `${folder}/${Date.now()}-${safeName(prepared.name)}`
-  const { error } = await supabase.storage.from('student-media').upload(path, prepared, {
-    contentType: prepared.type,
-    cacheControl: '31536000',
-    upsert: false,
-  })
-  if (error) throw new Error(error.message)
-  const { data } = supabase.storage.from('student-media').getPublicUrl(path)
-  return { url: data.publicUrl, path }
+  return uploadMediaToServer(prepared, folder)
+}
+
+export async function deleteUploadedFile(path: string) {
+  if (!path.startsWith('server:')) return false
+  await deleteMediaFromServer(path.slice('server:'.length))
+  return true
 }

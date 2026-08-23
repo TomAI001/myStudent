@@ -4,7 +4,6 @@ export interface StudentAccountRecord {
   id: string
   studentName: string
   username: string
-  password: string
   classIds: string[]
   active: boolean
 }
@@ -125,7 +124,8 @@ export interface LearningState {
   coursewarePackages: CoursewarePackage[]
 }
 
-const STORE_KEY = 'growth-journal-learning-state-v2'
+const STORE_KEY = 'growth-journal-learning-state-v3'
+const LEGACY_STORE_KEY = 'growth-journal-learning-state-v2'
 const changeEvent = 'growth-learning-state-change'
 
 const demoState: LearningState = {
@@ -133,10 +133,7 @@ const demoState: LearningState = {
     { id: 'teacher-owner', name: '主管理员', email: 'admin@example.com', role: 'owner', classIds: ['*'], active: true },
     { id: 'teacher-tom', name: 'Tom 老师', email: 'tom@example.com', role: 'teacher', classIds: ['python-summer'], active: true },
   ],
-  accounts: [
-    { id: 'demo-student-01', studentName: '林小满', username: 'student01', password: '123456', classIds: ['python-summer'], active: true },
-    { id: 'demo-student-02', studentName: '陈星野', username: 'student02', password: '123456', classIds: ['python-summer'], active: true },
-  ],
+  accounts: [],
   assessments: [{
     id: 'assessment-python-01', classId: 'python-summer', title: 'Python 小勇士阶段测评', description: '选择题、判断题、程序填空和编程题综合挑战。', kind: 'course', durationMinutes: 30, maxAttempts: 2,
     startAt: '2026-08-01T08:00', endAt: '2027-08-30T22:00', published: true,
@@ -165,8 +162,11 @@ function cloneDemo() { return JSON.parse(JSON.stringify(demoState)) as LearningS
 
 export function getLearningState(): LearningState {
   try {
+    window.localStorage.removeItem(LEGACY_STORE_KEY)
     const raw = window.localStorage.getItem(STORE_KEY)
-    return raw ? { ...cloneDemo(), ...(JSON.parse(raw) as Partial<LearningState>) } : cloneDemo()
+    const state = raw ? { ...cloneDemo(), ...(JSON.parse(raw) as Partial<LearningState>) } : cloneDemo()
+    state.accounts = []
+    return state
   } catch { return cloneDemo() }
 }
 
@@ -184,16 +184,6 @@ export function subscribeLearningState(listener: () => void) {
 }
 
 export function createId(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
-
-export function getStudentAccount(username: string, password: string) {
-  return getLearningState().accounts.find((item) => item.active && item.username === username.trim() && item.password === password) || null
-}
-
-export function changeStudentPassword(studentId: string, currentPassword: string, nextPassword: string) {
-  const state = getLearningState(); const account = state.accounts.find((item) => item.id === studentId)
-  if (!account || account.password !== currentPassword) return false
-  account.password = nextPassword; saveLearningState(state); return true
-}
 
 export function submitAssessment(assessment: Assessment, studentId: string, answers: Record<string, string>) {
   const state = getLearningState(); const previous = state.assessmentSubmissions.filter((item) => item.assessmentId === assessment.id && item.studentId === studentId)
