@@ -20,6 +20,17 @@ export interface StudentServerSession {
   classIds: string[]
 }
 
+export interface ParentServerSession {
+  parentName: string
+  parentUsername: string
+  studentId: string | null
+  studentName: string
+  classIds: string[]
+}
+
+let parentSessionCache: { value: ParentServerSession | null; expiresAt: number } | null = null
+let parentSessionPending: Promise<ParentServerSession | null> | null = null
+
 async function readResponse<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & { error?: string }
   if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`)
@@ -27,6 +38,11 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 
 async function adminHeaders(json = true) {
+  const localToken = import.meta.env.VITE_ADMIN_TEST_TOKEN?.trim()
+  if (localToken) return {
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+    Authorization: `Bearer ${localToken}`,
+  }
   const { data } = await supabase.auth.getSession()
   if (!data.session?.access_token) throw new Error('管理员登录已失效，请重新登录。')
   return {
@@ -56,6 +72,27 @@ export async function getStudentServerSession(): Promise<StudentServerSession | 
 export async function logoutStudentOnServer() {
   await fetch(`${API_BASE}/student/logout`, { method: 'POST', credentials: 'include' })
 }
+
+export async function loginParentOnServer(username:string,password:string):Promise<ParentServerSession>{
+  const response=await fetch(`${API_BASE}/parent/login`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})})
+  const data=await readResponse<{parent:{name:string;username:string};student:ServerStudentAccount}>(response)
+  const session={parentName:data.parent.name,parentUsername:data.parent.username,studentId:data.student.studentId,studentName:data.student.studentName,classIds:data.student.classIds}
+  parentSessionCache={value:session,expiresAt:Date.now()+1500}
+  return session
+}
+
+export function getParentServerSession():Promise<ParentServerSession|null>{
+  if(parentSessionCache&&parentSessionCache.expiresAt>Date.now())return Promise.resolve(parentSessionCache.value)
+  if(parentSessionPending)return parentSessionPending
+  parentSessionPending=fetch(`${API_BASE}/parent/session`,{credentials:'include'}).then(async response=>{
+    if(response.status===401)return null
+    const data=await readResponse<{parent:{name:string;username:string};student:ServerStudentAccount}>(response)
+    return {parentName:data.parent.name,parentUsername:data.parent.username,studentId:data.student.studentId,studentName:data.student.studentName,classIds:data.student.classIds}
+  }).then(session=>{parentSessionCache={value:session,expiresAt:Date.now()+1500};return session}).finally(()=>{parentSessionPending=null})
+  return parentSessionPending
+}
+
+export async function logoutParentOnServer(){parentSessionCache=null;parentSessionPending=null;await fetch(`${API_BASE}/parent/logout`,{method:'POST',credentials:'include'})}
 
 export async function changeStudentPasswordOnServer(currentPassword: string, nextPassword: string) {
   const response = await fetch(`${API_BASE}/student/password`, {
@@ -109,8 +146,10 @@ export async function uploadMediaToServer(file: File, folder: string) {
   const form = new FormData()
   form.append('file', file)
   form.append('folder', folder)
+  const localToken = import.meta.env.VITE_ADMIN_TEST_TOKEN?.trim()
   const { data } = await supabase.auth.getSession()
-  const headers: HeadersInit = data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {}
+  const token = localToken || data.session?.access_token
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
   const response = await fetch(`${API_BASE}/media/upload`, {
     method: 'POST', headers, credentials: 'include', body: form,
   })

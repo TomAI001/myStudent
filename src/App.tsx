@@ -2,9 +2,8 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { PageLoader } from './components/States'
 
-const PublicHome = lazy(() => import('./pages/PublicHome'))
-const ClassPage = lazy(() => import('./pages/ClassPage'))
-const StudentPage = lazy(() => import('./pages/StudentPage'))
+const ParentLogin = lazy(() => import('./pages/parent/ParentLogin'))
+const ParentPortal = lazy(() => import('./pages/parent/ParentPortal'))
 const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'))
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const StudentLogin = lazy(() => import('./pages/student/StudentLogin'))
@@ -15,9 +14,11 @@ export default function App() {
   return (
     <Suspense fallback={<div className="page-center"><PageLoader /></div>}>
       <Routes>
-        <Route path="/" element={<PublicHome />} />
-        <Route path="/class/:classId" element={<ClassPage />} />
-        <Route path="/student/:studentId" element={<StudentPage />} />
+        <Route path="/" element={<Navigate to="/parent/app" replace />} />
+        <Route path="/parent/login" element={<ParentLogin />} />
+        <Route path="/parent/app" element={<ParentPortal />} />
+        <Route path="/class/:classId" element={<Navigate to="/parent/login" replace />} />
+        <Route path="/student/:studentId" element={<Navigate to="/parent/login" replace />} />
         <Route path="/student/login" element={<StudentLogin />} />
         <Route path="/student/app" element={<StudentPortal />} />
         <Route path="/admin/login" element={<AdminLogin />} />

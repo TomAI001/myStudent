@@ -1,8 +1,8 @@
-import { BookOpen, Gamepad2, LockKeyhole } from 'lucide-react'
+import { BookOpen, Gamepad2, LockKeyhole, LogOut, UserRound } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
-export default function PublicShell({ children }: { children: ReactNode }) {
+export default function PublicShell({ children,parentName,onParentLogout }: { children: ReactNode;parentName?:string;onParentLogout?:()=>void }) {
   return (
     <div className="public-shell">
       <header className="public-header">
@@ -13,7 +13,7 @@ export default function PublicShell({ children }: { children: ReactNode }) {
             <small>每一步，都算数</small>
           </span>
         </Link>
-        <Link to="/student/login" className="public-student-link"><Gamepad2 /> 学生登录</Link>
+        {parentName?<div className="public-parent-session"><span><UserRound/>{parentName}</span><button type="button" onClick={onParentLogout}><LogOut/>退出</button></div>:<Link to="/student/login" className="public-student-link"><Gamepad2 /> 学生登录</Link>}
       </header>
       <main>{children}</main>
       <footer className="public-footer">

@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, ClipboardList, ExternalLink, Gamepad2, GraduationCap, LayoutDashboard, LogOut, Plus, Settings, UsersRound } from 'lucide-react'
+import { BookOpenText, CalendarCheck2, ChevronDown, ClipboardList, ExternalLink, Gamepad2, GraduationCap, LayoutDashboard, LogOut, Plus, Settings, UsersRound } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -10,14 +10,16 @@ import type { ClassGroup, Term } from '../../lib/types'
 import AdminOverview from './panels/AdminOverview'
 import StudentsPanel from './panels/StudentsPanel'
 import LessonsPanel from './panels/LessonsPanel'
-import HomeworkPanel from './panels/HomeworkPanel'
-import StudentPortalPanel from './panels/StudentPortalPanel'
+import HomeworkPanel from './panels/HomeworkPanelV2'
+import StudentPortalPanel from './panels/StudentPortalPanelV2'
+import AttendancePanel from './panels/AttendancePanel'
 
-type Tab = 'overview' | 'students' | 'lessons' | 'homework' | 'student_portal'
+type Tab = 'overview' | 'students' | 'attendance' | 'lessons' | 'homework' | 'student_portal'
 
 const navItems = [
   { id: 'overview' as const, label: '工作台', icon: LayoutDashboard },
   { id: 'students' as const, label: '学生档案', icon: UsersRound },
+  { id: 'attendance' as const, label: '课堂签到', icon: CalendarCheck2 },
   { id: 'lessons' as const, label: '课程与评价', icon: BookOpenText },
   { id: 'homework' as const, label: '每日作业', icon: ClipboardList },
   { id: 'student_portal' as const, label: '学生端管理', icon: Gamepad2 },
@@ -43,7 +45,14 @@ export default function AdminDashboard() {
     setClassId((current) => current || list[0]?.id || '')
   }, [])
 
+  const localAcceptance = import.meta.env.VITE_LOCAL_ACCEPTANCE === 'true'
+
   useEffect(() => {
+    if (localAcceptance) {
+      setSession({ user: { email: '本地验收管理员' } } as Session)
+      setAuthLoading(false)
+      return
+    }
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setAuthLoading(false)
@@ -54,7 +63,7 @@ export default function AdminDashboard() {
       if (!next) navigate('/admin/login', { replace: true })
     })
     return () => data.subscription.unsubscribe()
-  }, [navigate])
+  }, [navigate, localAcceptance])
 
   useEffect(() => { if (session) loadClasses() }, [session, loadClasses])
 
@@ -90,7 +99,7 @@ export default function AdminDashboard() {
       <aside className="admin-sidebar">
         <div className="admin-brand"><span><GraduationCap /></span><div><strong>成长记录</strong><small>ADMIN CONSOLE</small></div></div>
         <nav>{navItems.map((item) => <button type="button" key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}><item.icon /><span>{item.label}</span></button>)}</nav>
-        <div className="sidebar-bottom"><Link to="/" target="_blank"><ExternalLink /> 查看家长端</Link><button type="button" onClick={() => supabase.auth.signOut()}><LogOut /> 退出登录</button></div>
+        <div className="sidebar-bottom"><Link to="/" target="_blank"><ExternalLink /> 查看家长端</Link><button type="button" onClick={() => localAcceptance ? navigate('/') : supabase.auth.signOut()}><LogOut /> 退出登录</button></div>
       </aside>
       <div className="admin-main">
         <header className="admin-topbar">
@@ -105,6 +114,7 @@ export default function AdminDashboard() {
         <main className="admin-content">
           {tab === 'overview' && <AdminOverview classId={classId} termId={termId} onNavigate={setTab} onCreateClass={() => setSetupModal('class')} onCreateTerm={() => setSetupModal('term')} />}
           {tab === 'students' && <StudentsPanel classId={classId} />}
+          {tab === 'attendance' && <AttendancePanel classId={classId} termId={termId} className={classes.find(item=>item.id===classId)?.name||''} termName={terms.find(item=>item.id===termId)?.name||''} />}
           {tab === 'lessons' && <LessonsPanel classId={classId} termId={termId} />}
           {tab === 'homework' && <HomeworkPanel classId={classId} termId={termId} />}
           {tab === 'student_portal' && <StudentPortalPanel classId={classId} />}

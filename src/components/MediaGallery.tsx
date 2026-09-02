@@ -12,7 +12,7 @@ export default function MediaGallery({ items }: { items: MediaItem[] }) {
         {items.map((item, index) => (
           <button type="button" key={item.id} onClick={() => setActive(item)} className="media-thumb">
             {item.kind === 'image' ? (
-              <img src={item.url} alt={item.caption || `课堂照片 ${index + 1}`} loading="lazy" />
+              <img src={item.url} alt={`课堂照片 ${index + 1}`} loading="lazy" decoding="async" />
             ) : (
               <>
                 <video src={item.url} preload="metadata" muted />
@@ -28,11 +28,10 @@ export default function MediaGallery({ items }: { items: MediaItem[] }) {
           <button type="button" className="lightbox-close" onClick={() => setActive(null)}>关闭</button>
           <div className="lightbox-content" onClick={(event) => event.stopPropagation()}>
             {active.kind === 'image' ? (
-              <img src={active.url} alt={active.caption || '课堂照片'} />
+              <img src={active.url} alt="课堂照片" />
             ) : (
               <video src={active.url} controls autoPlay playsInline />
             )}
-            {active.caption && <p>{active.caption}</p>}
           </div>
         </div>
       )}

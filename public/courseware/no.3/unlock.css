@@ -1,0 +1,9 @@
+.project-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:26px;align-items:stretch}.locked-code{min-height:430px;padding:28px;border:4px solid var(--ink);border-radius:22px;background:#0d1330;box-shadow:12px 14px 0 var(--yellow)}
+.code-lock{min-height:365px;display:grid;place-content:center;justify-items:center;text-align:center;color:white}
+.code-lock>span{font-size:64px}.code-lock h3{margin:16px 0 6px;font-size:30px}.code-lock p{margin:0 0 24px;color:#aeb9da;font-size:18px}
+.unlock-code,.copy-code{padding:13px 24px;border:3px solid var(--ink);border-radius:10px;background:var(--yellow);font-weight:900;cursor:pointer;box-shadow:4px 5px 0 var(--ink)}
+.locked-code .display-code{max-width:none;margin:0;background:#090d1d;border-color:#6576bd;box-shadow:none}
+.unlocked-actions{display:flex;align-items:center;gap:18px;margin-top:18px;color:#bac5e8}.copy-code{padding:9px 17px;background:var(--cyan)}
+[hidden]{display:none!important}
+.speed-challenge{padding:25px;border:4px solid var(--ink);border-radius:22px;background:var(--pink);box-shadow:9px 10px 0 var(--ink)}.speed-challenge small{color:#8a2850;font-weight:900;letter-spacing:.18em}.speed-challenge h3{margin:18px 0;font-size:28px}.speed-challenge p{font-size:18px;line-height:1.75}.speed-challenge strong{display:block;margin-top:26px;padding:10px;border:2px dashed var(--ink);border-radius:10px;background:white;text-align:center}
+@media(max-width:1050px){.project-layout{grid-template-columns:1fr}.speed-challenge{display:none}}

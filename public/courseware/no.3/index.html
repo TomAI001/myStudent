@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Python 暑假第三课：魔法计算器</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;800;900&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="unlock.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span>PY</span><strong>CODE QUEST</strong><small>第三课 · 魔法计算器</small></div>
+    <div class="student-chip"><span class="avatar">满</span><div><small>当前学生</small><strong id="studentName">林小满</strong></div></div>
+    <div class="score-chip"><small>MY SCORE</small><strong id="scoreValue">0</strong><span>XP</span></div>
+  </header>
+
+  <main class="deck" id="deck">
+    <section class="slide active surface-dark" data-slide="1">
+      <div class="stars"></div>
+      <div class="hero-copy">
+        <p class="eyebrow">PYTHON SUMMER CAMP · LESSON 03</p>
+        <h1>魔法计算器</h1>
+        <p class="hero-sub">数字 × 变量 × 输入输出</p>
+        <div class="mission-tag">两小时任务：让程序认识你，也能帮你算答案</div>
+      </div>
+      <div class="calculator-art" aria-hidden="true">
+        <div class="screen">12 + 8 = <b>20</b></div>
+        <div class="keys"><i>7</i><i>8</i><i>9</i><i>+</i><i>4</i><i>5</i><i>6</i><i>−</i><i>1</i><i>2</i><i>3</i><i>×</i><i>0</i><i>.</i><i>=</i><i>÷</i></div>
+      </div>
+    </section>
+
+    <section class="slide surface-cyan" data-slide="2">
+      <div class="slide-content">
+        <p class="eyebrow">TODAY'S MISSION</p>
+        <h2>今天解锁 4 项能力</h2>
+        <div class="mission-grid">
+          <article><b>01</b><h3>数字运算</h3><p>让 Python 成为超级计算器</p></article>
+          <article><b>02</b><h3>变量盒子</h3><p>把数字和名字保存起来</p></article>
+          <article><b>03</b><h3>和程序对话</h3><p>使用 input() 接收信息</p></article>
+          <article><b>04</b><h3>独立作品</h3><p>完成自己的魔法计算器</p></article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="deck-footer">
+    <button id="prevButton">← 上一页</button>
+    <div class="progress"><span id="progressBar"></span></div>
+    <strong id="slideCounter">01 / 02</strong>
+    <button id="nextButton">下一页 →</button>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

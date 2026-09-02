@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, ImagePlus, Pencil, Plus, Search, Trash2, UsersRound } from 'lucide-react'
+import { BarChart3, CalendarDays, Globe2, ImagePlus, KeyRound, Pencil, Plus, Search, Sparkles, Trash2, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AbilityScorer from '../../../components/admin/AbilityScorer'
 import MediaManager from '../../../components/admin/MediaManager'
@@ -8,6 +8,7 @@ import { EmptyState, PageLoader } from '../../../components/States'
 import { emptyScores, type AbilityScores } from '../../../lib/abilities'
 import { getLessons, getRecord, getStudents, upsertRecord } from '../../../lib/data'
 import { supabase } from '../../../lib/supabase'
+import { adminAction, generateCourseDraft } from '../../../lib/featureApi'
 import type { Lesson, LessonRecordWithMedia, Student } from '../../../lib/types'
 
 const emptyLesson = { sequence_no: 1, title: '', lesson_date: '', summary: '', content_html: '' }
@@ -21,6 +22,10 @@ export default function LessonsPanel({ classId, termId }: { classId: string; ter
   const [form, setForm] = useState(emptyLesson)
   const [saving, setSaving] = useState(false)
   const [evaluationLesson, setEvaluationLesson] = useState<Lesson | null>(null)
+  const [aiStyle,setAiStyle]=useState('家长回顾版');const [aiMode,setAiMode]=useState<'replace'|'append'>('replace');const [aiPrompt,setAiPrompt]=useState('');const [aiUrl,setAiUrl]=useState('');const [aiPpt,setAiPpt]=useState<File|null>(null);const [aiBusy,setAiBusy]=useState(false);const [apiKey,setApiKey]=useState('');
+
+  const generateWithAi=async()=>{setAiBusy(true);try{const result=await generateCourseDraft({title:form.title||`第${form.sequence_no}课`,prompt:aiPrompt,style:aiStyle,ppt:aiPpt,url:aiUrl});setForm(current=>({...current,content_html:aiMode==='append'&&current.content_html?`${current.content_html}<hr>${result.content}`:result.content,summary:current.summary||aiPrompt.slice(0,80)}))}catch(reason){window.alert(reason instanceof Error?reason.message:'AI生成失败')}finally{setAiBusy(false)}}
+  const saveKey=async()=>{if(!apiKey.trim())return;try{await adminAction('/admin/settings/deepseek','POST',{apiKey});setApiKey('');window.alert('DeepSeek Key 已保存到服务器，网页不会显示明文。')}catch(reason){window.alert(reason instanceof Error?reason.message:'保存失败')}}
 
   const load = useCallback(async () => {
     if (!termId) return setLessons([])
@@ -66,7 +71,7 @@ export default function LessonsPanel({ classId, termId }: { classId: string; ter
         ) : <EmptyState title={query ? '没有匹配的课程' : '本学期还没有课程'} description={query ? '换一个关键词试试。' : '点击右上角“新建课程”，像写博客一样发布课堂内容。'} />}
       </div>
 
-      {editing && <Modal wide title={editing === 'new' ? '新建课程' : `编辑第 ${(editing as Lesson).sequence_no} 课`} subtitle="课程内容按班级统一发布，保存后家长端立即可见。" onClose={() => setEditing(null)}><form className="admin-form" onSubmit={saveLesson}><div className="form-row three"><label>课次<input type="number" min="1" value={form.sequence_no} onChange={(e) => setForm({ ...form, sequence_no: Number(e.target.value) })} required /></label><label className="grow">课程主题<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="例如：让小海龟画出星星" required /></label><label>上课日期<input type="date" value={form.lesson_date} onChange={(e) => setForm({ ...form, lesson_date: e.target.value })} required /></label></div><label>一句话摘要<input value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} placeholder="用一句话告诉家长这节课的重点" /></label><RichTextEditor label="课程正文" value={form.content_html} onChange={(content_html) => setForm((current) => ({ ...current, content_html }))} uploadFolder={`lessons/${termId}`} /><div className="form-actions sticky"><button type="button" onClick={() => setEditing(null)}>取消</button><button className="admin-primary" disabled={saving}>{saving ? '保存中…' : '保存并公开'}</button></div></form></Modal>}
+      {editing && <Modal wide title={editing === 'new' ? '新建课程' : `编辑第 ${(editing as Lesson).sequence_no} 课`} subtitle="课程内容按班级统一发布，保存后家长端立即可见。" onClose={() => setEditing(null)}><form className="admin-form" onSubmit={saveLesson}><div className="form-row three"><label>课次<input type="number" min="1" value={form.sequence_no} onChange={(e) => setForm({ ...form, sequence_no: Number(e.target.value) })} required /></label><label className="grow">课程主题<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="例如：让小海龟画出星星" required /></label><label>上课日期<input type="date" value={form.lesson_date} onChange={(e) => setForm({ ...form, lesson_date: e.target.value })} required /></label></div><label>一句话摘要<input value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} placeholder="用一句话告诉家长这节课的重点" /></label><section className="ai-course-writer"><header><div><Sparkles/><span><strong>AI 自动生成课程内容</strong><small>可读取PPT、公开网页和老师描述，生成后仍可自由修改。</small></span></div></header><div className="ai-key-row"><KeyRound/><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="首次使用：输入 DeepSeek API Key（保存后不显示）"/><button type="button" onClick={saveKey}>保存密钥</button></div><div className="ai-writer-grid"><label>内容风格<select value={aiStyle} onChange={e=>setAiStyle(e.target.value)}><option>家长回顾版</option><option>课堂教案版</option><option>学生趣味版</option></select></label><label>加入正文方式<select value={aiMode} onChange={e=>setAiMode(e.target.value as 'replace'|'append')}><option value="replace">替换原正文</option><option value="append">追加到正文末尾</option></select></label><label>上传PPT<input type="file" accept=".pptx" onChange={e=>setAiPpt(e.target.files?.[0]||null)}/></label><label className="grow ai-url-input"><span><Globe2/>识别课程网页（选填）</span><input type="url" value={aiUrl} onChange={e=>setAiUrl(e.target.value)} placeholder="https://example.com/course"/></label><label className="grow">老师一句话描述<input value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="例如：今天学习循环、双重循环和函数，完成星光绘图作品"/></label><button type="button" className="admin-primary" disabled={aiBusy||(!aiPrompt&&!aiPpt&&!aiUrl)} onClick={generateWithAi}><Sparkles/>{aiBusy?'正在读取并生成…':'生成并预览'}</button></div></section><RichTextEditor label="课程正文" value={form.content_html} onChange={(content_html) => setForm((current) => ({ ...current, content_html }))} uploadFolder={`lessons/${termId}`} /><div className="form-actions sticky"><button type="button" onClick={() => setEditing(null)}>取消</button><button className="admin-primary" disabled={saving}>{saving ? '保存中…' : '保存并公开'}</button></div></form></Modal>}
       {evaluationLesson && <EvaluationModal lesson={evaluationLesson} students={students} onClose={() => setEvaluationLesson(null)} />}
     </div>
   )

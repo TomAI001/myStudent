@@ -1,53 +1,20 @@
-import { AlarmClock, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Code2, FileQuestion, RotateCcw, Send, ShieldCheck, Timer, XCircle } from 'lucide-react'
-import { useState } from 'react'
-import { getLearningState, submitAssessment, type Assessment, type AssessmentSubmission } from '../../lib/studentLearningStore'
+/* eslint-disable @typescript-eslint/no-explicit-any -- 测评记录兼容不同课次题目结构 */
+import { ArrowLeft, CheckCircle2, ClipboardCheck, Code2, History, LoaderCircle, Play, RotateCcw, Trophy, XCircle } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { studentAction, type FeatureAssessment, type StudentFeatureState } from '../../lib/featureApi'
+import { runPythonCode } from '../../lib/pythonRuntime'
 
-export default function AssessmentCenter({ studentId, onBack }: { studentId: string; onBack: () => void }) {
-  const [state, setState] = useState(getLearningState)
-  const [active, setActive] = useState<Assessment | null>(null)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [result, setResult] = useState<AssessmentSubmission | null>(null)
-  const [startedAt, setStartedAt] = useState<number | null>(null)
-  const assessments = state.assessments.filter((item) => item.published)
+type ProgramAnswer={code:string;output:string}
+type AnswerValue=string|ProgramAnswer
 
-  const start = (assessment: Assessment) => { setActive(assessment); setAnswers({}); setResult(null); setStartedAt(Date.now()) }
-  const submit = () => {
-    if (!active || !window.confirm('确认提交这份测评吗？提交后会立即显示客观题结果。')) return
-    const saved = submitAssessment(active, studentId, answers); setResult(saved); setState(getLearningState())
-  }
-  const attempts = (id: string) => state.assessmentSubmissions.filter((item) => item.assessmentId === id && item.studentId === studentId)
-
-  if (active) return <AssessmentPaper assessment={active} answers={answers} setAnswers={setAnswers} result={result} startedAt={startedAt} onSubmit={submit} onExit={() => setActive(null)} />
-
-  return <main className="student-module-page">
-    <ModuleHeading icon={ClipboardCheck} label="ASSESSMENT CENTER" title="测评挑战" description="认真作答，客观题提交后立即显示结果。" onBack={onBack} />
-    <section className="assessment-grid">{assessments.map((item) => {
-      const submitted = attempts(item.id); const unavailable = submitted.length >= item.maxAttempts
-      return <article className="assessment-card" key={item.id}><div className="assessment-card-top"><span className={item.kind}><FileQuestion /></span><div><small>{item.kind === 'course' ? '课程测评' : '心理测评'}</small><h2>{item.title}</h2></div></div><p>{item.description}</p><div className="assessment-meta"><span><Timer /> {item.durationMinutes} 分钟</span><span><RotateCcw /> {submitted.length}/{item.maxAttempts} 次</span><span><ShieldCheck /> 自动保存</span></div><button type="button" disabled={unavailable} onClick={() => start(item)}>{unavailable ? '作答次数已用完' : submitted.length ? '再次挑战' : '开始测评'} <ChevronRight /></button>{submitted[0] && <div className="last-score"><span>上次客观题</span><strong>{submitted.at(-1)?.autoScore} 分</strong></div>}</article>
-    })}</section>
-  </main>
-}
-
-function AssessmentPaper({ assessment, answers, setAnswers, result, startedAt, onSubmit, onExit }: { assessment: Assessment; answers: Record<string,string>; setAnswers: React.Dispatch<React.SetStateAction<Record<string,string>>>; result: AssessmentSubmission | null; startedAt: number | null; onSubmit: () => void; onExit: () => void }) {
-  const total = assessment.questions.reduce((sum, item) => sum + item.points, 0)
-  const answered = Object.values(answers).filter(Boolean).length
-  const elapsed = startedAt ? Math.max(1, Math.round((Date.now() - startedAt) / 60000)) : 0
-  return <main className="student-module-page"><div className="paper-topbar"><button type="button" onClick={onExit}><ArrowLeft /> 返回测评列表</button><div><small>ASSESSMENT IN PROGRESS</small><strong>{assessment.title}</strong></div><span><AlarmClock /> {result ? `用时 ${elapsed} 分钟` : `${assessment.durationMinutes} 分钟`}</span></div>
-    {result && <section className="result-banner"><span><CheckCircle2 /></span><div><small>客观题成绩已公布</small><h1>{result.autoScore}<em> / {total} 分</em></h1><p>{result.manualPending ? '编程题正在等待老师评分，完成后总成绩会更新。' : '本次测评已完成。'}</p></div></section>}
-    <section className="assessment-paper">{assessment.questions.map((question, index) => {
-      const selected = answers[question.id] || ''; const isCorrect = result && question.type !== 'programming' && selected.trim().toLowerCase() === question.answer?.trim().toLowerCase()
-      return <article className={`question-block ${result ? isCorrect ? 'answer-correct' : question.type === 'programming' ? 'answer-manual' : 'answer-wrong' : ''}`} key={question.id}><header><span>{String(index + 1).padStart(2,'0')}</span><div><small>{question.type === 'choice' ? '选择题' : question.type === 'true_false' ? '判断题' : question.type === 'blank' ? '程序填空题' : '编程题'} · {question.points} 分</small><h2>{question.title}</h2></div>{result && (question.type === 'programming' ? <Code2 /> : isCorrect ? <CheckCircle2 /> : <XCircle />)}</header>
-        {(question.type === 'choice' || question.type === 'true_false') && <div className="question-options">{question.options?.map((option) => <button type="button" key={option} disabled={Boolean(result)} className={selected === option ? 'selected' : ''} onClick={() => setAnswers((current) => ({...current,[question.id]:option}))}><i>{String.fromCharCode(65 + (question.options?.indexOf(option) || 0))}</i>{option}</button>)}</div>}
-        {question.type === 'blank' && <input disabled={Boolean(result)} value={selected} onChange={(event) => setAnswers((current) => ({...current,[question.id]:event.target.value}))} placeholder="在这里填写缺少的代码" />}
-        {question.type === 'programming' && <textarea disabled={Boolean(result)} value={selected} onChange={(event) => setAnswers((current) => ({...current,[question.id]:event.target.value}))} rows={8} spellCheck={false} placeholder="# 在这里编写 Python 程序" />}
-        {result && question.type !== 'programming' && <p className="answer-explain">正确答案：<strong>{question.answer}</strong></p>}
-        {result && question.type === 'programming' && <p className="answer-explain">已提交，等待老师人工评分。</p>}
-      </article>
-    })}</section>
-    {!result && <div className="paper-submit"><span>已完成 {answered}/{assessment.questions.length} 题</span><button type="button" onClick={onSubmit}><Send /> 提交测评</button></div>}
-  </main>
-}
-
-export function ModuleHeading({ icon: Icon, label, title, description, onBack }: { icon: typeof ClipboardCheck; label: string; title: string; description: string; onBack: () => void }) {
-  return <div className="student-module-heading"><button type="button" onClick={onBack}><ArrowLeft /> 返回冒险大厅</button><div className="module-heading-icon"><Icon /></div><div><span>{label}</span><h1>{title}</h1><p>{description}</p></div></div>
+export default function AssessmentCenter({features,onRefresh,onBack}:{studentId:string;features:StudentFeatureState|null;onRefresh:()=>Promise<void>;onBack:()=>void}){
+  const [active,setActive]=useState<FeatureAssessment|null>(null);const [answers,setAnswers]=useState<Record<string,AnswerValue>>({});const [result,setResult]=useState<any>(null);const [busy,setBusy]=useState(false);const [running,setRunning]=useState('')
+  const latest=useMemo(()=>{const map:Record<string,any>={};for(const item of features?.attempts||[])if(!map[item.assessment_id])map[item.assessment_id]=item;return map},[features])
+  const totalPoints=(assessment:FeatureAssessment)=>assessment.questions.reduce((sum,q)=>sum+(q.points??10),0)
+  const begin=(assessment:FeatureAssessment)=>{setActive(assessment);setResult(null);setAnswers(Object.fromEntries(assessment.questions.filter(q=>q.type==='programming').map(q=>[q.id,{code:q.starterCode||'',output:''}])))}
+  const run=async(questionId:string)=>{const answer=answers[questionId] as ProgramAnswer;setRunning(questionId);try{const output=await runPythonCode(answer.code);setAnswers(current=>({...current,[questionId]:{...answer,output}}))}catch(reason){setAnswers(current=>({...current,[questionId]:{...answer,output:`运行出错：${reason instanceof Error?reason.message:String(reason)}`}}))}finally{setRunning('')}}
+  const ready=Boolean(active)&&active!.questions.every(q=>q.type==='programming'?Boolean((answers[q.id] as ProgramAnswer|undefined)?.code.trim())&&Object.prototype.hasOwnProperty.call(answers[q.id]||{},'output'):Boolean(answers[q.id]))
+  const submit=async()=>{if(!active)return;setBusy(true);try{const saved=await studentAction(`/student/assessments/${active.id}/submit`,'POST',{answers});setResult(saved);await onRefresh()}catch(reason){alert(reason instanceof Error?reason.message:'提交失败')}finally{setBusy(false)}}
+  if(!active)return <main className="student-module-page"><header><button onClick={onBack}><ArrowLeft/>返回冒险大厅</button><div><small>ASSESSMENT CENTER</small><h1>课程测评</h1><p>可以重复作答，系统保留每次成绩，当前成绩以最近一次为准。</p></div></header><div className="assessment-card-grid">{(features?.assessments||[]).map(item=>{const last=latest[item.id];const count=(features?.attempts||[]).filter(a=>a.assessment_id===item.id).length;return <article key={item.id}><span><ClipboardCheck/></span><h2>{item.title}</h2><p>{item.description}</p><div><b>{item.questions.length} 道题 · {totalPoints(item)}分</b><em>{last?`最近 ${last.score}/${last.total}`:'尚未作答'}</em></div><button onClick={()=>begin(item)}>{last?<><RotateCcw/>再次作答（第{count+1}次）</>:<>开始测评</>}</button></article>})}{!features?.assessments.length&&<div className="portal-empty"><ClipboardCheck/><strong>老师还没有开放测评</strong><span>开放后会显示在这里。</span></div>}</div><section className="attempt-history"><h2><History/>我的历史成绩</h2>{(features?.attempts||[]).map(item=><div key={item.id}><strong>{item.score}/{item.total}</strong><span>第{item.attempt}次</span><small>{new Date(item.submitted_at).toLocaleString('zh-CN')} · 错{item.wrong.length}题</small></div>)}</section></main>
+  return <main className="student-module-page assessment-taking"><header><button onClick={()=>setActive(null)}><ArrowLeft/>返回测评列表</button><div><small>QUIZ TIME</small><h1>{active.title}</h1><p>满分{totalPoints(active)}分；编程题先在浏览器运行，再统一提交。</p></div></header><div className="assessment-sheet">{active.questions.map((q,index)=>{const wrong=result?.wrong?.some((w:any)=>w.questionId===q.id);const program=q.type==='programming';const programAnswer=(answers[q.id] as ProgramAnswer|undefined)||{code:q.starterCode||'',output:''};return <article className={`${result?(wrong?'answer-wrong':'answer-correct'):''} ${program?'programming-question':''}`} key={q.id}><header><span>{String(index+1).padStart(2,'0')}</span><h2>{q.title}<small>{q.points??10} 分</small></h2>{result&&(wrong?<XCircle/>:<CheckCircle2/>)}</header>{program?<div className="assessment-code-lab"><div className="assessment-code-editor"><div><Code2/>Python代码</div><textarea spellCheck={false} disabled={Boolean(result)} value={programAnswer.code} onChange={e=>setAnswers({...answers,[q.id]:{code:e.target.value,output:''}})}/><button type="button" disabled={Boolean(result)||running===q.id} onClick={()=>run(q.id)}>{running===q.id?<LoaderCircle className="spin"/>:<Play/>}{running===q.id?'运行中…':'运行程序'}</button></div><div className="assessment-code-output"><strong>运行结果</strong><pre>{programAnswer.output||'运行后在这里查看输出。'}</pre></div></div>:<div>{(q.options||[]).map(option=><label key={option}><input type="radio" name={q.id} checked={answers[q.id]===option} onChange={()=>setAnswers({...answers,[q.id]:option})} disabled={Boolean(result)}/><span>{option}</span></label>)}</div>}{wrong&&<p>{program?'程序输出与题目要求还不一致，请修改后再次作答。':`正确答案：${result.wrong.find((w:any)=>w.questionId===q.id)?.answer}`}</p>}</article>})}<footer>{result?<div className="assessment-result"><Trophy/><strong>{result.score} / {result.total}</strong><span>第 {result.attempt} 次作答 · 错 {result.wrong.length} 题</span><button onClick={()=>begin(active)}><RotateCcw/>重新作答</button></div>:<button className="student-primary" disabled={busy||!ready} onClick={submit}>{busy?'提交中…':'提交测评'}</button>}</footer></div></main>
 }

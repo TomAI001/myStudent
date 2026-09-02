@@ -1,6 +1,6 @@
 import { ArrowRight, BookOpenText, CheckCircle2, ClipboardList, Plus, Sparkles, UsersRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { supabase } from '../../../lib/supabase'
+import { getHomework, getLessons, getStudentRecords, getStudents } from '../../../lib/data'
 
 type Tab = 'overview' | 'students' | 'lessons' | 'homework'
 
@@ -9,12 +9,10 @@ export default function AdminOverview({ classId, termId, onNavigate, onCreateCla
 
   useEffect(() => {
     if (!classId) return
-    Promise.all([
-      supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', classId),
-      termId ? supabase.from('lessons').select('*', { count: 'exact', head: true }).eq('term_id', termId) : Promise.resolve({ count: 0 }),
-      termId ? supabase.from('homework').select('*', { count: 'exact', head: true }).eq('term_id', termId) : Promise.resolve({ count: 0 }),
-      termId ? supabase.from('student_lesson_records').select('*,lessons!inner(term_id)', { count: 'exact', head: true }).eq('lessons.term_id', termId) : Promise.resolve({ count: 0 }),
-    ]).then(([students, lessons, homework, records]) => setCounts({ students: students.count ?? 0, lessons: lessons.count ?? 0, homework: homework.count ?? 0, records: records.count ?? 0 }))
+    Promise.all([getStudents(classId), termId ? getLessons(termId) : [], termId ? getHomework(termId) : []]).then(async ([students, lessons, homework]) => {
+      const records = (await Promise.all(students.map((student) => getStudentRecords(student.id, lessons.map((lesson) => lesson.id))))).flat()
+      setCounts({ students: students.length, lessons: lessons.length, homework: homework.length, records: records.length })
+    })
   }, [classId, termId])
 
   if (!classId) return <div className="admin-welcome"><div className="welcome-art"><Sparkles /></div><small>第一步</small><h1>先创建一个班级</h1><p>班级创建后，就可以录入 7 位同学、7 节课程和每天的作业。</p><button className="admin-primary" type="button" onClick={onCreateClass}><Plus /> 创建第一个班级</button></div>
