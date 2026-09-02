@@ -22,7 +22,12 @@ test -f "${release_root}/dist/index.html"
 test -f "${release_root}/server/app.py"
 test -f "${release_root}/server/portal_features.py"
 
-echo "[2/8] 检查后端代码和独立测试数据库"
+echo "[2/8] 安装新增依赖"
+sudo /opt/growth-journal-api/venv/bin/pip install \
+  --disable-pip-version-check \
+  -r "${release_root}/server/requirements.txt"
+
+echo "[3/8] 检查后端代码和独立测试数据库"
 /opt/growth-journal-api/venv/bin/python -m py_compile \
   "${release_root}/server/app.py" \
   "${release_root}/server/portal_features.py"
@@ -32,15 +37,10 @@ PYTHONPATH="${release_root}/server" \
   /opt/growth-journal-api/venv/bin/python -c \
   'from app import create_app; app = create_app(); print("STAGED_APP_OK", len(app.url_map._rules))'
 
-echo "[3/8] 记录学生账号数量"
+echo "[4/8] 记录学生账号数量"
 accounts_before="$(sudo /opt/growth-journal-api/venv/bin/python -c \
   'import sqlite3; db=sqlite3.connect("/var/lib/growth-journal/growth.db"); print(db.execute("select count(*) from student_accounts").fetchone()[0])')"
 echo "学生账号数（发布前）：${accounts_before}"
-
-echo "[4/8] 安装新增依赖"
-sudo /opt/growth-journal-api/venv/bin/pip install \
-  --disable-pip-version-check \
-  -r "${release_root}/server/requirements.txt"
 
 echo "[5/8] 更新后端程序（不覆盖数据库和上传资料）"
 sudo install -m 0644 "${release_root}/server/app.py" /opt/growth-journal-api/app.py
