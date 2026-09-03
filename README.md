@@ -45,64 +45,21 @@
 ## 技术方案
 
 - 前端：React + TypeScript + Vite
-- 家长端内容与教师身份：Supabase
-- 学生账号、安全会话与媒体文件：腾讯云服务器上的 Flask、SQLite、Gunicorn 和 Nginx
+- 全站业务数据与教师身份：腾讯云服务器上的 Flask 和 SQLite
+- 图片、视频、课件及作业附件：腾讯云服务器磁盘
 - 代码托管：GitHub
-- 网站部署：GitHub Pages（推荐，无需新账号或手机号）
+- 网站部署：腾讯云服务器上的 Gunicorn 和 Nginx
 
-## 第一次上线
+## 服务器部署
 
-### 1. 创建 Supabase 项目
+生产站点由腾讯云服务器直接提供，运行时不需要任何第三方数据库账号或前端密钥。
 
-1. 打开 [Supabase](https://supabase.com/)，使用 GitHub 账号登录并新建项目。
-2. 妥善保存创建项目时设置的数据库密码。
-3. 进入 `SQL Editor`，新建查询。
-4. 复制 [`supabase/schema.sql`](./supabase/schema.sql) 的全部内容并运行。它会创建数据表、公开只读权限、管理员写入权限和 `student-media` 文件桶。
+- SQLite 数据库：`/var/lib/growth-journal/growth.db`
+- 上传资料：`/var/lib/growth-journal/uploads`
+- 后端程序：`/opt/growth-journal-api`
+- 前端文件：`/var/www/growth-journal`
 
-### 2. 创建唯一管理员账号
-
-1. 在 Supabase 后台进入 `Authentication → Users`。
-2. 点击 `Add user → Create new user`，填写你自己的邮箱和密码。
-3. 在 `Authentication → Sign In / Providers → Email` 中关闭 **Allow new users to sign up**（允许新用户注册）。这一项很重要：关闭后只有你手动创建的账号能够登录后台。
-
-### 3. 获取前端环境变量
-
-1. 在 Supabase 进入 `Project Settings → Data API`。
-2. 复制 `Project URL` 和 `Publishable key`（格式通常为 `sb_publishable_...`）。这是可以用于网页前端的公开密钥。不要复制 `Secret key` 或旧版的 `service_role` 密钥。
-3. 本地开发时，把 [`.env.example`](./.env.example) 复制为 `.env.local`，填写：
-
-```env
-VITE_SUPABASE_URL=你的 Project URL
-VITE_SUPABASE_PUBLISHABLE_KEY=你的 Publishable key
-```
-
-### 4. 上传 GitHub
-
-在 GitHub 新建一个空仓库，然后在本项目目录执行：
-
-```bash
-git init
-git add .
-git commit -m "完成咱们班的成长记录第一版"
-git branch -M main
-git remote add origin 你的仓库地址
-git push -u origin main
-```
-
-如果上级工作目录已经是另一个 Git 仓库，请在 GitHub Desktop 中把“学生展示界面”作为独立仓库添加，避免提交其他工作文件。
-
-### 5. 部署到 GitHub Pages
-
-1. 打开 GitHub 仓库的 `Settings → Secrets and variables → Actions`。
-2. 点击 `New repository secret`，分别添加：
-   - `VITE_SUPABASE_URL`：Supabase Project URL
-   - `VITE_SUPABASE_PUBLISHABLE_KEY`：Supabase Publishable key
-3. 进入 `Settings → Pages`。
-4. 在 `Build and deployment → Source` 中选择 `GitHub Actions`。
-5. 打开仓库的 `Actions` 页面，选择 `Deploy to GitHub Pages`，点击 `Run workflow`；之后每次推送代码都会自动重新部署。
-6. 发布成功后的网址为 `https://tomai001.github.io/myStudent/`。
-
-项目使用 Hash 路由以兼容 GitHub Pages。家长打开的学生页面链接会包含 `/#/`，这是正常现象。
+首次启动时通过 `GROWTH_ADMIN_EMAIL` 和 `GROWTH_ADMIN_PASSWORD` 创建管理员，之后账号保存在本机 SQLite。发布新版时只更新程序文件，不能覆盖数据库和上传目录。
 
 ## 推荐录入顺序
 

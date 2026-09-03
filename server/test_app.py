@@ -19,6 +19,8 @@ class ApiTests(unittest.TestCase):
             "DATABASE": str(self.db_path),
             "UPLOAD_ROOT": str(root / "uploads"),
             "ADMIN_TEST_TOKEN": "teacher-test-token",
+            "ADMIN_BOOTSTRAP_EMAIL": "teacher@example.com",
+            "ADMIN_BOOTSTRAP_PASSWORD": "123456",
             "DEFAULT_CLASS_ID": "class-one",
         })
         self.client = self.app.test_client()
@@ -29,6 +31,43 @@ class ApiTests(unittest.TestCase):
 
     def admin_headers(self):
         return {"Authorization": "Bearer teacher-test-token"}
+
+    def test_self_hosted_admin_login_and_core_data_crud(self):
+        login = self.client.post("/api/admin/login", json={"email": "teacher@example.com", "password": "123456"})
+        self.assertEqual(login.status_code, 200, login.json)
+        self.assertIn("HttpOnly", login.headers["Set-Cookie"])
+        self.assertEqual(self.client.get("/api/admin/session").status_code, 200)
+
+        class_response = self.client.post("/api/admin/classes", json={"name": "Python班", "description": "测试"})
+        self.assertEqual(class_response.status_code, 201, class_response.json)
+        class_id = class_response.json["item"]["id"]
+        term_response = self.client.post("/api/admin/terms", json={
+            "class_id": class_id, "name": "2026秋季", "start_date": "2026-09-01", "end_date": "2027-01-31",
+        })
+        self.assertEqual(term_response.status_code, 201, term_response.json)
+        term_id = term_response.json["item"]["id"]
+        student_response = self.client.post("/api/admin/students", json={
+            "class_id": class_id, "name": "测试学生", "joined_on": "2026-09-03",
+        })
+        self.assertEqual(student_response.status_code, 201, student_response.json)
+        student_id = student_response.json["item"]["id"]
+        lesson_response = self.client.post("/api/admin/lessons", json={
+            "class_id": class_id, "term_id": term_id, "sequence_no": 1, "title": "第一课",
+            "lesson_date": "2026-09-03", "summary": "测试", "content_html": "<p>内容</p>",
+        })
+        self.assertEqual(lesson_response.status_code, 201, lesson_response.json)
+        lesson_id = lesson_response.json["item"]["id"]
+        record_response = self.client.put("/api/admin/records", json={
+            "lesson_id": lesson_id, "student_id": student_id, "comment": "很好",
+            "thinking_score": 5, "focus_score": 4, "creativity_score": 3,
+            "coding_score": 5, "motivation_score": 4,
+        })
+        self.assertEqual(record_response.status_code, 200, record_response.json)
+        listed = self.client.get(f"/api/data/students?class_id={class_id}")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json["items"][0]["name"], "测试学生")
+        self.assertEqual(self.client.post("/api/admin/logout").status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/session").status_code, 401)
 
     def test_migrated_password_is_hashed_and_login_is_shared_server_side(self):
         db = sqlite3.connect(self.db_path)

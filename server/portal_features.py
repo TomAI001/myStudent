@@ -700,7 +700,15 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
     def transfer_account(account_id: str):
         body = json_body(); target = str(body.get("classId", "")).strip()
         if not target: return jsonify({"error": "请选择目标班级。"}), 400
-        db = get_db(); db.execute("update student_accounts set class_ids=?, updated_at=? where id=?", (json.dumps([target]), iso_now(), account_id)); db.commit()
+        db = get_db()
+        account = db.execute("select student_id from student_accounts where id=?", (account_id,)).fetchone()
+        if not account:
+            return jsonify({"error": "学生账号不存在。"}), 404
+        now = iso_now()
+        db.execute("update student_accounts set class_ids=?, updated_at=? where id=?", (json.dumps([target]), now, account_id))
+        if account["student_id"]:
+            db.execute("update students set class_id=? where id=?", (target, account["student_id"]))
+        db.commit()
         return jsonify({"ok": True})
 
     @app.put("/api/admin/class-resources/<resource_id>")

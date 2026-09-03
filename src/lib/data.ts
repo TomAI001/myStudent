@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-import { deleteUploadedFile } from './uploads'
 import type {
   ClassGroup,
   Homework,
@@ -11,147 +9,104 @@ import type {
   Term,
 } from './types'
 
-function fail(error: { message: string } | null) {
-  if (error) throw new Error(error.message)
+const API_BASE = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
+
+async function read<T>(response: Response): Promise<T> {
+  const data = await response.json().catch(() => ({})) as T & { error?: string }
+  if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`)
+  return data
 }
 
-const localAcceptance = import.meta.env.VITE_LOCAL_ACCEPTANCE === 'true'
-const localCache = new Map<string, unknown>()
-async function localData<T>(name: string): Promise<T> {
-  if (localCache.has(name)) return localCache.get(name) as T
-  const response = await fetch(`${import.meta.env.BASE_URL}local-seed/${name}.json`)
-  if (!response.ok) throw new Error(`本地验收数据 ${name} 读取失败`)
-  const value = await response.json() as T
-  localCache.set(name, value)
-  return value
-}
-function asArray<T>(value: T | T[]): T[] {
-  const result:T[]=[]
-  const visit=(item:unknown)=>{if(Array.isArray(item))item.forEach(visit);else if(item!=null)result.push(item as T)}
-  visit(value)
-  return result
+async function getItems<T>(path: string): Promise<T[]> {
+  const response = await fetch(`${API_BASE}${path}`, { credentials: 'include' })
+  return (await read<{ items: T[] }>(response)).items
 }
 
-export async function getClasses(): Promise<ClassGroup[]> {
-  if (localAcceptance) return asArray(await localData<ClassGroup | ClassGroup[]>('classes'))
-  const { data, error } = await supabase.from('classes').select('*').order('created_at')
-  fail(error)
-  return (data ?? []) as ClassGroup[]
+async function adminWrite<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method, credentials: 'include',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  return read<T>(response)
 }
+
+export function getClasses() { return getItems<ClassGroup>('/data/classes') }
 
 export async function getClass(id: string): Promise<ClassGroup | null> {
-  if (localAcceptance) return (await getClasses()).find((item) => item.id === id) ?? null
-  const { data, error } = await supabase.from('classes').select('*').eq('id', id).maybeSingle()
-  fail(error)
-  return data as ClassGroup | null
+  const response = await fetch(`${API_BASE}/data/classes/${encodeURIComponent(id)}`, { credentials: 'include' })
+  return (await read<{ item: ClassGroup | null }>(response)).item
 }
 
-export async function getTerms(classId: string): Promise<Term[]> {
-  if (localAcceptance) return asArray(await localData<Term | Term[]>('terms')).filter((item) => item.class_id === classId)
-  const { data, error } = await supabase
-    .from('terms')
-    .select('*')
-    .eq('class_id', classId)
-    .order('start_date', { ascending: false })
-  fail(error)
-  return (data ?? []) as Term[]
+export function getTerms(classId: string) {
+  return getItems<Term>(`/data/terms?class_id=${encodeURIComponent(classId)}`)
 }
 
-export async function getStudents(classId: string): Promise<Student[]> {
-  if (localAcceptance) return asArray(await localData<Student | Student[]>('students')).filter((item) => item.class_id === classId)
-  const { data, error } = await supabase
-    .from('students')
-    .select('*')
-    .eq('class_id', classId)
-    .order('created_at')
-  fail(error)
-  return (data ?? []) as Student[]
+export function getStudents(classId: string) {
+  return getItems<Student>(`/data/students?class_id=${encodeURIComponent(classId)}`)
 }
 
 export async function getStudent(id: string): Promise<Student | null> {
-  if (localAcceptance) return asArray(await localData<Student | Student[]>('students')).find((item) => item.id === id) ?? null
-  const { data, error } = await supabase.from('students').select('*').eq('id', id).maybeSingle()
-  fail(error)
-  return data as Student | null
+  const response = await fetch(`${API_BASE}/data/students/${encodeURIComponent(id)}`, { credentials: 'include' })
+  return (await read<{ item: Student | null }>(response)).item
 }
 
-export async function getLessons(termId: string): Promise<Lesson[]> {
-  if (localAcceptance) return asArray(await localData<Lesson | Lesson[]>('lessons')).filter((item) => item.term_id === termId).sort((a,b)=>a.sequence_no-b.sequence_no)
-  const { data, error } = await supabase
-    .from('lessons')
-    .select('*')
-    .eq('term_id', termId)
-    .order('sequence_no')
-  fail(error)
-  return (data ?? []) as Lesson[]
+export function getLessons(termId: string) {
+  return getItems<Lesson>(`/data/lessons?term_id=${encodeURIComponent(termId)}`)
 }
 
-export async function getHomework(termId: string): Promise<Homework[]> {
-  if (localAcceptance) return asArray(await localData<Homework | Homework[]>('homework')).filter((item) => item.term_id === termId)
-  const { data, error } = await supabase
-    .from('homework')
-    .select('*')
-    .eq('term_id', termId)
-    .order('assigned_date', { ascending: false })
-  fail(error)
-  return (data ?? []) as Homework[]
+export function getHomework(termId: string) {
+  return getItems<Homework>(`/data/homework?term_id=${encodeURIComponent(termId)}`)
 }
 
 export async function getStudentRecords(studentId: string, lessonIds: string[]) {
   if (!lessonIds.length) return [] as LessonRecordWithMedia[]
-  if (localAcceptance) {
-    const records=asArray(await localData<StudentLessonRecord | StudentLessonRecord[]>('student_lesson_records')).filter((item)=>item.student_id===studentId&&lessonIds.includes(item.lesson_id))
-    const media=asArray(await localData<MediaItem | MediaItem[]>('media'))
-    return records.map((item)=>({...item,media:media.filter((entry)=>entry.record_id===item.id).sort((a,b)=>a.sort_order-b.sort_order)})) as LessonRecordWithMedia[]
-  }
-  const { data, error } = await supabase
-    .from('student_lesson_records')
-    .select('*, media(*)')
-    .eq('student_id', studentId)
-    .in('lesson_id', lessonIds)
-  fail(error)
-  return ((data ?? []) as LessonRecordWithMedia[]).map((item) => ({
-    ...item,
-    media: (item.media ?? []).sort((a, b) => a.sort_order - b.sort_order),
-  }))
+  const query = new URLSearchParams({ student_id: studentId, lesson_ids: lessonIds.join(',') })
+  return getItems<LessonRecordWithMedia>(`/data/records?${query}`)
 }
 
 export async function getRecord(studentId: string, lessonId: string) {
-  if (localAcceptance) return (await getStudentRecords(studentId,[lessonId]))[0] ?? null
-  const { data, error } = await supabase
-    .from('student_lesson_records')
-    .select('*, media(*)')
-    .eq('student_id', studentId)
-    .eq('lesson_id', lessonId)
-    .maybeSingle()
-  fail(error)
-  return data as LessonRecordWithMedia | null
+  const query = new URLSearchParams({ student_id: studentId, lesson_id: lessonId })
+  const response = await fetch(`${API_BASE}/data/records/one?${query}`, { credentials: 'include' })
+  return (await read<{ item: LessonRecordWithMedia | null }>(response)).item
 }
 
-export async function upsertRecord(
-  payload: Omit<StudentLessonRecord, 'id' | 'created_at' | 'updated_at'>,
-) {
-  const { data, error } = await supabase
-    .from('student_lesson_records')
-    .upsert(payload, { onConflict: 'lesson_id,student_id' })
-    .select()
-    .single()
-  fail(error)
-  return data as StudentLessonRecord
+export async function upsertRecord(payload: Omit<StudentLessonRecord, 'id' | 'created_at' | 'updated_at'>) {
+  return (await adminWrite<{ item: StudentLessonRecord }>('/admin/records', 'PUT', payload)).item
+}
+
+export async function createClass(payload: { name: string; description: string }) {
+  return (await adminWrite<{ item: ClassGroup }>('/admin/classes', 'POST', payload)).item
+}
+
+export async function createTerm(payload: { class_id: string; name: string; start_date: string; end_date: string }) {
+  return (await adminWrite<{ item: Term }>('/admin/terms', 'POST', payload)).item
+}
+
+export async function createStudent(payload: Omit<Student, 'id' | 'created_at'> & { id?: string }) {
+  return (await adminWrite<{ item: Student }>('/admin/students', 'POST', payload)).item
+}
+
+export async function updateStudent(id: string, payload: Partial<Omit<Student, 'id' | 'created_at'>>) {
+  return (await adminWrite<{ item: Student }>(`/admin/students/${encodeURIComponent(id)}`, 'PATCH', payload)).item
+}
+
+export async function createLesson(payload: Omit<Lesson, 'id' | 'created_at'>) {
+  return (await adminWrite<{ item: Lesson }>('/admin/lessons', 'POST', payload)).item
+}
+
+export async function updateLesson(id: string, payload: Partial<Omit<Lesson, 'id' | 'created_at'>>) {
+  return (await adminWrite<{ item: Lesson }>(`/admin/lessons/${encodeURIComponent(id)}`, 'PATCH', payload)).item
+}
+
+export async function deleteLesson(id: string) {
+  await adminWrite<{ ok: boolean }>(`/admin/lessons/${encodeURIComponent(id)}`, 'DELETE')
 }
 
 export async function addMedia(payload: Omit<MediaItem, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('media').insert(payload).select().single()
-  fail(error)
-  return data as MediaItem
+  return (await adminWrite<{ item: MediaItem }>('/admin/media-items', 'POST', payload)).item
 }
 
 export async function removeMedia(item: MediaItem) {
-  const removedFromServer = await deleteUploadedFile(item.storage_path)
-  if (!removedFromServer) {
-    const { error: storageError } = await supabase.storage.from('student-media').remove([item.storage_path])
-    fail(storageError)
-  }
-  const { error } = await supabase.from('media').delete().eq('id', item.id)
-  fail(error)
+  await adminWrite<{ ok: boolean }>(`/admin/media-items/${encodeURIComponent(item.id)}`, 'DELETE')
 }

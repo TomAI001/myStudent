@@ -6,8 +6,7 @@ import Modal from '../../../components/admin/Modal'
 import RichTextEditor from '../../../components/admin/RichTextEditor'
 import { EmptyState, PageLoader } from '../../../components/States'
 import { emptyScores, type AbilityScores } from '../../../lib/abilities'
-import { getLessons, getRecord, getStudents, upsertRecord } from '../../../lib/data'
-import { supabase } from '../../../lib/supabase'
+import { createLesson, deleteLesson, getLessons, getRecord, getStudents, updateLesson, upsertRecord } from '../../../lib/data'
 import { adminAction, generateCourseDraft } from '../../../lib/featureApi'
 import type { Lesson, LessonRecordWithMedia, Student } from '../../../lib/types'
 
@@ -44,19 +43,18 @@ export default function LessonsPanel({ classId, termId }: { classId: string; ter
   const saveLesson = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true)
     const payload = { ...form, class_id: classId, term_id: termId }
-    const response = editing === 'new' ? await supabase.from('lessons').insert(payload) : await supabase.from('lessons').update(payload).eq('id', (editing as Lesson).id)
-    setSaving(false)
-    if (response.error) return window.alert(response.error.code === '23505' ? '这个课次已经存在，请修改课次编号。' : response.error.message)
-    setEditing(null); await load()
+    try {
+      if (editing === 'new') await createLesson(payload)
+      else await updateLesson((editing as Lesson).id, payload)
+      setEditing(null); await load()
+    } catch (reason) { window.alert(reason instanceof Error ? reason.message : '课程保存失败。') }
+    finally { setSaving(false) }
   }
 
   const removeLesson = async (lesson: Lesson) => {
     if (!window.confirm(`确定删除第 ${lesson.sequence_no} 课“${lesson.title}”吗？所有学生评价和课堂影像也会删除。`)) return
-    const { data: media } = await supabase.from('media').select('storage_path,student_lesson_records!inner(lesson_id)').eq('student_lesson_records.lesson_id', lesson.id)
-    const paths = (media ?? []).map((item) => item.storage_path as string)
-    if (paths.length) await supabase.storage.from('student-media').remove(paths)
-    const { error } = await supabase.from('lessons').delete().eq('id', lesson.id)
-    if (error) window.alert(error.message); else await load()
+    try { await deleteLesson(lesson.id); await load() }
+    catch (reason) { window.alert(reason instanceof Error ? reason.message : '课程删除失败。') }
   }
 
   if (!classId || !termId) return <EmptyState title="请先选择班级和学期" description="课程会按学期进行归档。" />

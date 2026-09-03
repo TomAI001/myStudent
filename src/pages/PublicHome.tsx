@@ -2,23 +2,19 @@ import { ArrowRight, BookHeart, Code2, Orbit, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import PublicShell from '../components/PublicShell'
-import { EmptyState, ErrorState, PageLoader, SetupNotice } from '../components/States'
+import { EmptyState, ErrorState, PageLoader } from '../components/States'
 import { getClasses } from '../lib/data'
-import { isSupabaseConfigured } from '../lib/supabase'
 import type { ClassGroup } from '../lib/types'
 
 export default function PublicHome() {
-  const localAcceptance = import.meta.env.VITE_LOCAL_ACCEPTANCE === 'true'
-  const dataReady = isSupabaseConfigured || localAcceptance
   const navigate = useNavigate()
   const [classes, setClasses] = useState<ClassGroup[]>([])
-  const [loading, setLoading] = useState(dataReady)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!dataReady) return
     getClasses().then(setClasses).catch((reason: Error) => setError(reason.message)).finally(() => setLoading(false))
-  }, [dataReady])
+  }, [])
 
   const openClass = () => {
     const firstClass = classes[0]
@@ -58,9 +54,7 @@ export default function PublicHome() {
           <span className="section-number">01</span>
           <div><p>找到我们</p><h2>选择班级，开启成长记录</h2></div>
         </div>
-        {!dataReady ? (
-          <SetupNotice />
-        ) : loading ? (
+        {loading ? (
           <PageLoader />
         ) : error ? (
           <ErrorState message={error} />

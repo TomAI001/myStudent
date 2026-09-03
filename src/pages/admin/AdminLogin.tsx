@@ -1,29 +1,29 @@
 import { ArrowLeft, KeyRound, LoaderCircle, LockKeyhole, Mail } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { SetupNotice } from '../../components/States'
-import { isSupabaseConfigured, supabase } from '../../lib/supabase'
+import { getAdminSession, loginAdmin } from '../../lib/authApi'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState('tt578071052@gmail.com')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return
-    supabase.auth.getSession().then(({ data }) => data.session && navigate('/admin', { replace: true }))
+    getAdminSession().then((session) => session && navigate('/admin', { replace: true }))
   }, [navigate])
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setLoading(true)
     setError('')
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
-    setLoading(false)
-    if (authError) setError('邮箱或密码不正确，请重新检查。')
-    else navigate('/admin', { replace: true })
+    try {
+      await loginAdmin(email, password)
+      navigate('/admin', { replace: true })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '邮箱或密码不正确，请重新检查。')
+    } finally { setLoading(false) }
   }
 
   return (
@@ -38,14 +38,12 @@ export default function AdminLogin() {
         </div>
         <div className="login-form-wrap">
           <div><small>WELCOME BACK</small><h2>管理员登录</h2><p>登录后录入课程、评价和课堂影像。</p></div>
-          {!isSupabaseConfigured ? <SetupNotice compact /> : (
-            <form onSubmit={submit}>
+          <form onSubmit={submit}>
               <label><span>邮箱</span><div><Mail /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="你的管理员邮箱" required autoComplete="email" /></div></label>
               <label><span>密码</span><div><KeyRound /><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="请输入密码" required autoComplete="current-password" /></div></label>
               {error && <p className="form-error">{error}</p>}
               <button type="submit" className="admin-primary" disabled={loading}>{loading ? <LoaderCircle className="spin" /> : <LockKeyhole />} {loading ? '正在验证…' : '安全登录'}</button>
-            </form>
-          )}
+          </form>
         </div>
       </div>
     </div>

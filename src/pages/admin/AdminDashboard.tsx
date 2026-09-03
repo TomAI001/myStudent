@@ -1,11 +1,10 @@
 import { BookOpenText, CalendarCheck2, ChevronDown, ClipboardList, ExternalLink, Gamepad2, GraduationCap, LayoutDashboard, LogOut, Plus, Settings, UsersRound } from 'lucide-react'
-import type { Session } from '@supabase/supabase-js'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Modal from '../../components/admin/Modal'
 import { PageLoader } from '../../components/States'
-import { getClasses, getTerms } from '../../lib/data'
-import { supabase } from '../../lib/supabase'
+import { getAdminSession, logoutAdmin, type AdminSession } from '../../lib/authApi'
+import { createClass as createClassOnServer, createTerm as createTermOnServer, getClasses, getTerms } from '../../lib/data'
 import type { ClassGroup, Term } from '../../lib/types'
 import AdminOverview from './panels/AdminOverview'
 import StudentsPanel from './panels/StudentsPanel'
@@ -27,7 +26,7 @@ const navItems = [
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
-  const [session, setSession] = useState<Session | null>(null)
+  const [session, setSession] = useState<AdminSession | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('overview')
   const [classes, setClasses] = useState<ClassGroup[]>([])
@@ -45,25 +44,13 @@ export default function AdminDashboard() {
     setClassId((current) => current || list[0]?.id || '')
   }, [])
 
-  const localAcceptance = import.meta.env.VITE_LOCAL_ACCEPTANCE === 'true'
-
   useEffect(() => {
-    if (localAcceptance) {
-      setSession({ user: { email: '本地验收管理员' } } as Session)
-      setAuthLoading(false)
-      return
-    }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setAuthLoading(false)
-      if (!data.session) navigate('/admin/login', { replace: true })
-    })
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+    getAdminSession().then((next) => {
       setSession(next)
+      setAuthLoading(false)
       if (!next) navigate('/admin/login', { replace: true })
     })
-    return () => data.subscription.unsubscribe()
-  }, [navigate, localAcceptance])
+  }, [navigate])
 
   useEffect(() => { if (session) loadClasses() }, [session, loadClasses])
 
@@ -77,19 +64,21 @@ export default function AdminDashboard() {
 
   const createClass = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true)
-    const { error } = await supabase.from('classes').insert(classForm)
-    setSaving(false)
-    if (error) return window.alert(error.message)
-    setClassForm({ name: '', description: '' }); setSetupModal(null); await loadClasses()
+    try {
+      await createClassOnServer(classForm)
+      setClassForm({ name: '', description: '' }); setSetupModal(null); await loadClasses()
+    } catch (reason) { window.alert(reason instanceof Error ? reason.message : '班级保存失败。') }
+    finally { setSaving(false) }
   }
 
   const createTerm = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true)
-    const { error } = await supabase.from('terms').insert({ ...termForm, class_id: classId })
-    setSaving(false)
-    if (error) return window.alert(error.message)
-    setTermForm({ name: '', start_date: '', end_date: '' }); setSetupModal(null)
-    const list = await getTerms(classId); setTerms(list); setTermId(list[0]?.id || '')
+    try {
+      await createTermOnServer({ ...termForm, class_id: classId })
+      setTermForm({ name: '', start_date: '', end_date: '' }); setSetupModal(null)
+      const list = await getTerms(classId); setTerms(list); setTermId(list[0]?.id || '')
+    } catch (reason) { window.alert(reason instanceof Error ? reason.message : '学期保存失败。') }
+    finally { setSaving(false) }
   }
 
   if (authLoading || !session) return <div className="admin-loading"><PageLoader label="正在进入工作台…" /></div>
@@ -99,7 +88,7 @@ export default function AdminDashboard() {
       <aside className="admin-sidebar">
         <div className="admin-brand"><span><GraduationCap /></span><div><strong>成长记录</strong><small>ADMIN CONSOLE</small></div></div>
         <nav>{navItems.map((item) => <button type="button" key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}><item.icon /><span>{item.label}</span></button>)}</nav>
-        <div className="sidebar-bottom"><Link to="/" target="_blank"><ExternalLink /> 查看家长端</Link><button type="button" onClick={() => localAcceptance ? navigate('/') : supabase.auth.signOut()}><LogOut /> 退出登录</button></div>
+        <div className="sidebar-bottom"><Link to="/" target="_blank"><ExternalLink /> 查看家长端</Link><button type="button" onClick={async () => { await logoutAdmin(); navigate('/admin/login', { replace: true }) }}><LogOut /> 退出登录</button></div>
       </aside>
       <div className="admin-main">
         <header className="admin-topbar">
@@ -109,7 +98,7 @@ export default function AdminDashboard() {
             <label><span>当前学期</span><div><select value={termId} onChange={(event) => setTermId(event.target.value)} disabled={!classId}><option value="">请选择学期</option>{terms.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown /></div></label>
             <button type="button" className="small-add" disabled={!classId} onClick={() => setSetupModal('term')}><Plus /> 学期</button>
           </div>
-          <div className="admin-user"><span>{session.user.email?.slice(0, 1).toUpperCase()}</span><div><strong>管理员</strong><small>{session.user.email}</small></div><Settings /></div>
+          <div className="admin-user"><span>{session.email.slice(0, 1).toUpperCase()}</span><div><strong>管理员</strong><small>{session.email}</small></div><Settings /></div>
         </header>
         <main className="admin-content">
           {tab === 'overview' && <AdminOverview classId={classId} termId={termId} onNavigate={setTab} onCreateClass={() => setSetupModal('class')} onCreateTerm={() => setSetupModal('term')} />}

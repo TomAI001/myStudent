@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 const API_BASE = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
 
 export interface ServerStudentAccount {
@@ -37,18 +35,13 @@ async function readResponse<T>(response: Response): Promise<T> {
   return data
 }
 
-async function adminHeaders(json = true) {
+async function adminHeaders(json = true): Promise<Record<string, string>> {
   const localToken = import.meta.env.VITE_ADMIN_TEST_TOKEN?.trim()
   if (localToken) return {
     ...(json ? { 'Content-Type': 'application/json' } : {}),
     Authorization: `Bearer ${localToken}`,
   }
-  const { data } = await supabase.auth.getSession()
-  if (!data.session?.access_token) throw new Error('管理员登录已失效，请重新登录。')
-  return {
-    ...(json ? { 'Content-Type': 'application/json' } : {}),
-    Authorization: `Bearer ${data.session.access_token}`,
-  }
+  return json ? { 'Content-Type': 'application/json' } : {}
 }
 
 export async function loginStudentOnServer(username: string, password: string): Promise<StudentServerSession> {
@@ -147,9 +140,7 @@ export async function uploadMediaToServer(file: File, folder: string) {
   form.append('file', file)
   form.append('folder', folder)
   const localToken = import.meta.env.VITE_ADMIN_TEST_TOKEN?.trim()
-  const { data } = await supabase.auth.getSession()
-  const token = localToken || data.session?.access_token
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+  const headers: HeadersInit = localToken ? { Authorization: `Bearer ${localToken}` } : {}
   const response = await fetch(`${API_BASE}/media/upload`, {
     method: 'POST', headers, credentials: 'include', body: form,
   })

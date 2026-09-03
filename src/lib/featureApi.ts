@@ -1,14 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- 后端聚合状态包含多种可扩展记录 */
-import { supabase } from './supabase'
-
 const API_BASE = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
 
-async function headers(json = true) {
+async function headers(json = true): Promise<Record<string, string>> {
   const local = import.meta.env.VITE_ADMIN_TEST_TOKEN?.trim()
   if (local) return { ...(json ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${local}` }
-  const { data } = await supabase.auth.getSession()
-  if (!data.session?.access_token) throw new Error('管理员登录已失效。')
-  return { ...(json ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${data.session.access_token}` }
+  return json ? { 'Content-Type': 'application/json' } : {}
 }
 
 async function read<T>(response: Response): Promise<T> {
@@ -76,8 +72,8 @@ export async function previewStudentImport(file:File) {
   const form=new FormData();form.append('file',file)
   return read<{rows:StudentImportRow[];blankRowsSkipped:number}>(await fetch(`${API_BASE}/admin/student-import/preview`,{method:'POST',headers:await headers(false),credentials:'include',body:form}))
 }
-export async function commitStudentImport(classId:string,students:Array<{studentId:string;studentName:string;username:string}>) {
-  return adminAction('/admin/student-import/commit','POST',{classId,students}) as Promise<{accounts:FeatureAccount[]}>
+export async function commitStudentImport(classId:string,students:Array<{studentId:string;studentName:string;username:string}>,joinedOn:string) {
+  return adminAction('/admin/student-import/commit','POST',{classId,students,joinedOn}) as Promise<{accounts:FeatureAccount[]}>
 }
 export async function downloadStudentImportTemplate() {
   const response=await fetch(`${API_BASE}/admin/student-import/template`,{headers:await headers(false),credentials:'include'})

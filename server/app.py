@@ -9,8 +9,6 @@ import re
 import secrets
 import sqlite3
 import time
-import urllib.error
-import urllib.request
 import uuid
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
@@ -29,6 +27,7 @@ from pypinyin import Style, lazy_pinyin
 
 SESSION_COOKIE = "growth_student_session"
 PARENT_SESSION_COOKIE = "growth_parent_session"
+ADMIN_SESSION_COOKIE = "growth_admin_session"
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{2,32}$")
 ALLOWED_MEDIA = {
     "image/jpeg": ".jpg",
@@ -40,7 +39,6 @@ ALLOWED_MEDIA = {
     "video/quicktime": ".mov",
 }
 LOGIN_ATTEMPTS: dict[str, list[float]] = {}
-ADMIN_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def utc_now() -> datetime:
@@ -101,10 +99,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.config.from_mapping(
         DATABASE=os.getenv("GROWTH_DATABASE", "/var/lib/growth-journal/growth.db"),
         UPLOAD_ROOT=os.getenv("GROWTH_UPLOAD_ROOT", "/var/lib/growth-journal/uploads"),
-        SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
-        SUPABASE_PUBLISHABLE_KEY=os.getenv("SUPABASE_PUBLISHABLE_KEY", ""),
         DEFAULT_CLASS_ID=os.getenv("DEFAULT_CLASS_ID", "python-summer"),
         ADMIN_TEST_TOKEN=os.getenv("ADMIN_TEST_TOKEN", ""),
+        ADMIN_BOOTSTRAP_EMAIL=os.getenv("GROWTH_ADMIN_EMAIL", ""),
+        ADMIN_BOOTSTRAP_PASSWORD=os.getenv("GROWTH_ADMIN_PASSWORD", ""),
         SETTINGS_ENCRYPTION_SECRET=os.getenv("GROWTH_SETTINGS_SECRET", ""),
         MAX_CONTENT_LENGTH=220 * 1024 * 1024,
         SESSION_DAYS=7,
@@ -125,9 +123,23 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     Path(app.config["UPLOAD_ROOT"]).mkdir(parents=True, exist_ok=True)
     with app.app_context():
         init_db()
+        from core_data import ensure_core_schema
+        ensure_core_schema(get_db())
+        ensure_admin_account()
         migrate_demo_accounts()
 
     register_routes(app)
+    from core_data import register_core_routes
+    register_core_routes(
+        app,
+        get_db=get_db,
+        require_admin=require_admin,
+        verify_admin_token=verify_admin_token,
+        student_from_cookie=student_from_cookie,
+        parent_from_cookie=parent_from_cookie,
+        json_body=json_body,
+        iso_now=iso_now,
+    )
     from portal_features import register_portal_features
     register_portal_features(
         app,
@@ -183,6 +195,21 @@ def init_db() -> None:
           expires_at text not null,
           last_seen_at text not null
         );
+        create table if not exists admin_accounts (
+          id text primary key,
+          email text not null collate nocase unique,
+          password_hash text not null,
+          active integer not null default 1 check (active in (0, 1)),
+          created_at text not null,
+          updated_at text not null
+        );
+        create table if not exists admin_sessions (
+          token_hash text primary key,
+          admin_id text not null references admin_accounts(id) on delete cascade,
+          created_at text not null,
+          expires_at text not null,
+          last_seen_at text not null
+        );
         create table if not exists media_uploads (
           id text primary key,
           owner_kind text not null check (owner_kind in ('admin', 'student')),
@@ -198,6 +225,8 @@ def init_db() -> None:
         create index if not exists student_sessions_expires_at_idx on student_sessions(expires_at);
         create index if not exists parent_sessions_account_id_idx on parent_sessions(account_id);
         create index if not exists parent_sessions_expires_at_idx on parent_sessions(expires_at);
+        create index if not exists admin_sessions_admin_id_idx on admin_sessions(admin_id);
+        create index if not exists admin_sessions_expires_at_idx on admin_sessions(expires_at);
         """
     )
     columns = {row["name"] for row in db.execute("pragma table_info(student_accounts)").fetchall()}
@@ -205,6 +234,28 @@ def init_db() -> None:
         db.execute("alter table student_accounts add column password_cipher text")
     if "credentials_assigned" not in columns:
         db.execute("alter table student_accounts add column credentials_assigned integer not null default 1")
+    db.commit()
+
+
+def ensure_admin_account() -> None:
+    email = str(current_app.config.get("ADMIN_BOOTSTRAP_EMAIL") or "").strip().lower()
+    password = str(current_app.config.get("ADMIN_BOOTSTRAP_PASSWORD") or "")
+    if not email or not valid_password(password):
+        return
+    db = get_db()
+    row = db.execute("select id from admin_accounts where email=?", (email,)).fetchone()
+    now = iso_now()
+    if row:
+        db.execute(
+            "update admin_accounts set password_hash=?,active=1,updated_at=? where id=?",
+            (generate_password_hash(password), now, row["id"]),
+        )
+        db.execute("delete from admin_sessions where admin_id=?", (row["id"],))
+    else:
+        db.execute(
+            "insert into admin_accounts (id,email,password_hash,active,created_at,updated_at) values (?,?,?,?,?,?)",
+            (str(uuid.uuid4()), email, generate_password_hash(password), 1, now, now),
+        )
     db.commit()
 
 
@@ -328,33 +379,34 @@ def require_parent(view):
     return wrapped
 
 
-def verify_admin_token() -> dict[str, Any] | None:
-    header = request.headers.get("Authorization", "")
-    if not header.startswith("Bearer "):
-        return None
-    token = header[7:].strip()
+def admin_from_cookie() -> sqlite3.Row | None:
+    token = request.cookies.get(ADMIN_SESSION_COOKIE, "")
     if not token:
         return None
+    now = iso_now()
+    db = get_db()
+    row = db.execute(
+        """select a.* from admin_sessions s
+           join admin_accounts a on a.id=s.admin_id
+           where s.token_hash=? and s.expires_at>? and a.active=1""",
+        (token_hash(token), now),
+    ).fetchone()
+    if row:
+        db.execute("update admin_sessions set last_seen_at=? where token_hash=?", (now, token_hash(token)))
+        db.commit()
+    return row
+
+
+def verify_admin_token() -> dict[str, Any] | None:
+    row = admin_from_cookie()
+    if row:
+        return {"id": row["id"], "email": row["email"]}
+    header = request.headers.get("Authorization", "")
+    token = header[7:].strip() if header.startswith("Bearer ") else ""
     test_token = current_app.config.get("ADMIN_TEST_TOKEN")
-    if test_token and secrets.compare_digest(token, test_token):
+    if token and test_token and secrets.compare_digest(token, test_token):
         return {"id": "test-admin", "email": "admin@test.local"}
-    cached = ADMIN_CACHE.get(token_hash(token))
-    if cached and cached[0] > time.time():
-        return cached[1]
-    url = current_app.config["SUPABASE_URL"].rstrip("/") + "/auth/v1/user"
-    key = current_app.config["SUPABASE_PUBLISHABLE_KEY"]
-    if not url.startswith("http") or not key:
-        return None
-    outbound = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "apikey": key})
-    try:
-        with urllib.request.urlopen(outbound, timeout=8) as response:
-            user = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, ValueError):
-        return None
-    if not user.get("id"):
-        return None
-    ADMIN_CACHE[token_hash(token)] = (time.time() + 300, user)
-    return user
+    return None
 
 
 def require_admin(view):
@@ -394,22 +446,10 @@ def record_login_failure(key: str) -> None:
     LOGIN_ATTEMPTS.setdefault(key, []).append(time.time())
 
 
-def update_supabase_student(student_id: str, name: str) -> None:
-    header = request.headers.get("Authorization", "")
-    url = current_app.config["SUPABASE_URL"].rstrip("/") + f"/rest/v1/students?id=eq.{student_id}"
-    key = current_app.config["SUPABASE_PUBLISHABLE_KEY"]
-    if not url.startswith("http") or not key or not header:
-        return
-    outbound = urllib.request.Request(
-        url,
-        data=json.dumps({"name": name}).encode("utf-8"),
-        method="PATCH",
-        headers={"Authorization": header, "apikey": key, "Content-Type": "application/json", "Prefer": "return=minimal"},
-    )
-    try:
-        urllib.request.urlopen(outbound, timeout=8).close()
-    except urllib.error.URLError:
-        pass
+def update_local_student(student_id: str, name: str) -> None:
+    db = get_db()
+    db.execute("update students set name=? where id=?", (name, student_id))
+    db.commit()
 
 
 def register_routes(app: Flask) -> None:
@@ -445,6 +485,58 @@ def register_routes(app: Flask) -> None:
     @app.get("/uploads/<path:filename>")
     def uploaded_file(filename: str):
         return send_from_directory(current_app.config["UPLOAD_ROOT"], filename, conditional=True)
+
+    @app.post("/api/admin/login")
+    def admin_login():
+        body = json_body()
+        email = str(body.get("email", "")).strip().lower()
+        password = str(body.get("password", ""))
+        rate_key = f"admin:{request.remote_addr}:{email}"
+        if login_is_limited(rate_key):
+            return jsonify({"error": "尝试次数过多，请 15 分钟后再试。"}), 429
+        row = get_db().execute("select * from admin_accounts where email=?", (email,)).fetchone()
+        if not row or not row["active"] or not check_password_hash(row["password_hash"], password):
+            record_login_failure(rate_key)
+            time.sleep(0.25)
+            return jsonify({"error": "邮箱或密码不正确，请重新检查。"}), 401
+        LOGIN_ATTEMPTS.pop(rate_key, None)
+        token = secrets.token_urlsafe(48)
+        now = utc_now()
+        expires = now + timedelta(days=int(current_app.config["SESSION_DAYS"]))
+        db = get_db()
+        db.execute("delete from admin_sessions where expires_at<=?", (now.isoformat(),))
+        db.execute(
+            "insert into admin_sessions (token_hash,admin_id,created_at,expires_at,last_seen_at) values (?,?,?,?,?)",
+            (token_hash(token), row["id"], now.isoformat(), expires.isoformat(), now.isoformat()),
+        )
+        db.commit()
+        response = jsonify({"admin": {"id": row["id"], "email": row["email"]}})
+        response.set_cookie(
+            ADMIN_SESSION_COOKIE,
+            token,
+            max_age=int(current_app.config["SESSION_DAYS"]) * 86400,
+            httponly=True,
+            secure=request.is_secure,
+            samesite="Lax",
+            path="/",
+        )
+        return response
+
+    @app.get("/api/admin/session")
+    @require_admin
+    def admin_session():
+        return jsonify({"admin": g.admin_user})
+
+    @app.post("/api/admin/logout")
+    def admin_logout():
+        token = request.cookies.get(ADMIN_SESSION_COOKIE, "")
+        if token:
+            db = get_db()
+            db.execute("delete from admin_sessions where token_hash=?", (token_hash(token),))
+            db.commit()
+        response = jsonify({"ok": True})
+        response.delete_cookie(ADMIN_SESSION_COOKIE, path="/", samesite="Lax")
+        return response
 
     @app.post("/api/student/login")
     def student_login():
@@ -750,9 +842,15 @@ def register_routes(app: Flask) -> None:
         if existing:
             return jsonify({"error": f"账号 {existing['username']} 已存在，请重新预览名单。"}), 409
         now = iso_now()
+        joined_on = str(body.get("joinedOn") or datetime.now().astimezone().date().isoformat())
         created_ids: list[str] = []
         try:
             for student_id, student_name, username in prepared:
+                db.execute(
+                    """insert into students (id,class_id,name,avatar_url,avatar_path,joined_on,created_at)
+                       values (?,?,?,null,null,?,?)""",
+                    (student_id, class_ids[0], student_name, joined_on, now),
+                )
                 account_id = str(uuid.uuid4())
                 db.execute(
                     """insert into student_accounts
@@ -798,7 +896,7 @@ def register_routes(app: Flask) -> None:
         except sqlite3.IntegrityError:
             return jsonify({"error": "这个登录账号已经存在。"}), 409
         if student_id and student_name != row["student_name"]:
-            update_supabase_student(student_id, student_name)
+            update_local_student(student_id, student_name)
         updated = db.execute("select * from student_accounts where id = ?", (account_id,)).fetchone()
         return jsonify({"account": account_json(updated, include_secret=True)})
 

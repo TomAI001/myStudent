@@ -2,9 +2,8 @@ import { ArchiveRestore, CalendarDays, Camera, Download, Eye, EyeOff, FileSpread
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Modal from '../../../components/admin/Modal'
 import { EmptyState, PageLoader } from '../../../components/States'
-import { getClasses, getStudents } from '../../../lib/data'
+import { createStudent, getClasses, getStudents, updateStudent } from '../../../lib/data'
 import { adminAction, commitStudentImport, downloadStudentImportTemplate, getAdminFeatureState, previewStudentImport, type FeatureAccount, type StudentImportRow } from '../../../lib/featureApi'
-import { supabase } from '../../../lib/supabase'
 import type { Student } from '../../../lib/types'
 import { uploadPublicFile } from '../../../lib/uploads'
 
@@ -30,7 +29,6 @@ export default function StudentsPanel({ classId }: { classId: string }) {
   const [importFileName,setImportFileName]=useState('')
   const [importBlankRows,setImportBlankRows]=useState(0)
   const [importLoading,setImportLoading]=useState(false)
-  const localAcceptance = import.meta.env.VITE_LOCAL_ACCEPTANCE === 'true'
 
   const load = useCallback(async () => {
     if (!classId) return setStudents([])
@@ -62,12 +60,13 @@ export default function StudentsPanel({ classId }: { classId: string }) {
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true)
-    if (localAcceptance) { setSaving(false); window.alert('本地验收版不会改写线上学生档案。'); return }
     const payload = { ...form, class_id: classId }
-    const response = editing === 'new' ? await supabase.from('students').insert(payload) : await supabase.from('students').update(payload).eq('id', editing!.id)
-    setSaving(false)
-    if (response.error) return window.alert(response.error.message)
-    setEditing(null); await load()
+    try {
+      if (editing === 'new') await createStudent(payload)
+      else await updateStudent((editing as Student).id, payload)
+      setEditing(null); await load()
+    } catch (reason) { window.alert(reason instanceof Error ? reason.message : '学生档案保存失败。') }
+    finally { setSaving(false) }
   }
 
   const remove = async (student: Student) => {
@@ -103,7 +102,6 @@ export default function StudentsPanel({ classId }: { classId: string }) {
     if(!window.confirm(`确定将“${student.name}”及其全部课程、作业、测评和积分转入目标班级吗？`))return
     try {
       await adminAction(`/admin/student-accounts/${account.id}/transfer`,'POST',{classId:target})
-      if(!localAcceptance){const {error}=await supabase.from('students').update({class_id:target}).eq('id',student.id);if(error){await adminAction(`/admin/student-accounts/${account.id}/transfer`,'POST',{classId});throw error}}
       await load()
     } catch(reason){window.alert(reason instanceof Error?reason.message:'转班失败')}
   }
@@ -118,19 +116,13 @@ export default function StudentsPanel({ classId }: { classId: string }) {
   }
   const confirmImport=async()=>{
     if(!importRows.length)return
-    if(localAcceptance){window.alert('本地验收已完成：正式服务器中确认导入后会创建学生档案、学生账号和家长账号。');return}
     setImportLoading(true)
-    let createdIds:string[]=[]
     try{
       const joined_on=new Date().toISOString().slice(0,10)
-      const {data,error}=await supabase.from('students').insert(importRows.map(row=>({class_id:classId,name:row.studentName,joined_on,avatar_url:null,avatar_path:null}))).select()
-      if(error)throw error
-      const profiles=(data||[]) as Student[];createdIds=profiles.map(item=>item.id)
-      if(profiles.length!==importRows.length)throw new Error('学生档案创建数量不一致，请重试。')
-      await commitStudentImport(classId,importRows.map((row,index)=>({studentId:profiles[index].id,studentName:row.studentName,username:row.username})))
+      await commitStudentImport(classId,importRows.map(row=>({studentId:crypto.randomUUID(),studentName:row.studentName,username:row.username})),joined_on)
       window.alert(`成功导入 ${importRows.length} 名学生，学生与家长初始密码均为 123456。`)
       setImportOpen(false);setImportRows([]);setImportFileName('');await load()
-    }catch(reason){if(createdIds.length)await supabase.from('students').delete().in('id',createdIds);window.alert(reason instanceof Error?reason.message:'批量导入失败')}
+    }catch(reason){window.alert(reason instanceof Error?reason.message:'批量导入失败')}
     finally{setImportLoading(false)}
   }
 

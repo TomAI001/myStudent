@@ -20,7 +20,6 @@ export function ErrorState({ message, action }: { message: string; action?: Reac
     </div>
   )
 }
-
 export function EmptyState({
   title,
   description,
@@ -38,15 +37,5 @@ export function EmptyState({
     </div>
   )
 }
+// End of shared state components.
 
-export function SetupNotice({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={`setup-notice ${compact ? 'compact' : ''}`}>
-      <Settings2 size={24} />
-      <div>
-        <strong>项目等待连接 Supabase</strong>
-        <p>按照项目 README 完成免费账号和环境变量配置后，就可以开始录入数据。</p>
-      </div>
-    </div>
-  )
-}
