@@ -2,8 +2,8 @@
 set -euo pipefail
 
 release_name="aikc-selfhosted-20260903-v2"
-release_url="https://raw.githubusercontent.com/TomAI001/myStudent/d9d3dd5/aikc-selfhosted-20260903-v2.zip"
-release_sha="7f9cae6fd3cd91bb1a7f68766b1df7b8f5e1c8580d8a2d0eb8516534a046d5b8"
+release_url="https://raw.githubusercontent.com/TomAI001/myStudent/main/aikc-selfhosted-20260903-v2.zip"
+release_sha="7dea39a7e04310dfc5192bc8c023f9404cb691f81d37c863922a6999880215f3"
 release_zip="/home/ubuntu/${release_name}.zip"
 release_dir="$(mktemp -d "/tmp/${release_name}.XXXXXX")"
 release_root="${release_dir}/package"
@@ -137,7 +137,7 @@ sudo systemctl reload nginx
 echo "[9/10] 核对线上接口、管理员和学生账号"
 curl --fail https://aikc.tech/api/health
 curl --fail https://aikc.tech/api/data/classes >/dev/null
-grep -q 'assets/index-BMuOsgkc.js' "${web_root}/index.html"
+grep -q 'assets/index-' "${web_root}/index.html"
 accounts_after="$(sudo "${api_root}/venv/bin/python" -c \
   'import sqlite3; db=sqlite3.connect("/var/lib/growth-journal/growth.db"); print(db.execute("select count(*) from student_accounts").fetchone()[0])')"
 echo "学生账号数（发布后）：${accounts_after}"

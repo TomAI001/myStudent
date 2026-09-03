@@ -86,7 +86,7 @@ def _read_public_webpage(value: str) -> str:
     return " ".join(" ".join(parser.parts).split())[:30000]
 
 
-def _extract_course_package(uploaded: Any, destination: Path) -> dict[str, Any] | None:
+def _extract_course_package(uploaded: Any, destination: Path) -> dict[str, Any] | list[Any] | None:
     """Safely extract the folder containing index.html and read an optional assessment manifest."""
     try:
         archive = zipfile.ZipFile(uploaded.stream)
@@ -137,10 +137,10 @@ def _extract_course_package(uploaded: Any, destination: Path) -> dict[str, Any] 
             manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
         elif package_manifest_path.exists() and package_manifest_path.stat().st_size <= 1024 * 1024:
             package_manifest = json.loads(package_manifest_path.read_text(encoding="utf-8-sig"))
-            manifest = package_manifest.get("assessment") if isinstance(package_manifest, dict) else None
+            manifest = (package_manifest.get("assessments") or package_manifest.get("assessment")) if isinstance(package_manifest, dict) else None
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("assessment.json格式不正确。") from exc
-    return manifest if isinstance(manifest, dict) else None
+    return manifest if isinstance(manifest, (dict, list)) else None
 
 
 def _normalized_assessment(manifest: dict[str, Any], default_title: str) -> tuple[str, str, list[dict[str, Any]]]:
@@ -182,6 +182,25 @@ def _normalized_assessment(manifest: dict[str, Any], default_title: str) -> tupl
             item.update({"starterCode": str(source.get("starterCode") or "")[:20000], "expectedOutput": expected})
         questions.append(item)
     return title, description, questions
+
+
+def _normalized_assessments(manifest: dict[str, Any] | list[Any], default_title: str) -> list[tuple[str, str, list[dict[str, Any]]]]:
+    manifests: Any = manifest.get("assessments") if isinstance(manifest, dict) and "assessments" in manifest else manifest
+    if isinstance(manifests, dict):
+        manifests = [manifests]
+    if not isinstance(manifests, list) or not manifests or len(manifests) > 20:
+        raise ValueError("assessment.json须包含1至20套测评。")
+    normalized = []
+    titles: set[str] = set()
+    for index, item in enumerate(manifests, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"第{index}套测评格式不正确。")
+        assessment = _normalized_assessment(item, f"{default_title}课后测评{index}")
+        if assessment[0] in titles:
+            raise ValueError(f"测评名称重复：{assessment[0]}")
+        titles.add(assessment[0])
+        normalized.append(assessment)
+    return normalized
 
 
 COURSES = [
@@ -760,7 +779,7 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
         destination = Path(current_app.config["UPLOAD_ROOT"]) / "courseware" / package_id
         try:
             assessment_manifest = _extract_course_package(uploaded, destination)
-            assessment_data = _normalized_assessment(assessment_manifest, title) if sync_assessment and assessment_manifest else None
+            assessment_data = _normalized_assessments(assessment_manifest, title) if sync_assessment and assessment_manifest else []
             if sync_assessment and not assessment_manifest:
                 raise ValueError("已勾选同步测评，但ZIP根目录缺少assessment.json。")
             now = iso_now(); db = get_db(); course_id = f"{class_id}:{course_key}"; course_resource_id = f"course:{course_key}"
@@ -775,10 +794,9 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
                 (course_resource_id, "course", course_id, title, subtitle, json.dumps(course_payload, ensure_ascii=False), now, now),
             )
             db.execute("insert into class_resource_assignments values (?,?,?,?,?)", (class_id, course_resource_id, 1, now, now))
-            assessment_resource_id = None
-            if assessment_data:
-                assessment_title, assessment_description, questions = assessment_data
-                assessment_key = f"assessment-{course_key}"
+            assessment_resource_ids = []
+            for assessment_index, (assessment_title, assessment_description, questions) in enumerate(assessment_data, start=1):
+                assessment_key = f"assessment-{course_key}-{assessment_index}"
                 assessment_id = f"{class_id}:{assessment_key}"
                 assessment_resource_id = f"assessment:{assessment_key}"
                 lesson_id = f"lesson-{sequence}"
@@ -786,12 +804,13 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
                     "insert into assessments values (?,?,?,?,?,?,1,?,?)",
                     (assessment_id, class_id, lesson_id, assessment_title, assessment_description, json.dumps(questions, ensure_ascii=False), now, now),
                 )
-                assessment_payload = {"lessonId": lesson_id, "questions": questions, "uploadedWithCourse": course_resource_id}
+                assessment_payload = {"lessonId": lesson_id, "questions": questions, "uploadedWithCourse": course_resource_id, "assessmentIndex": assessment_index}
                 db.execute(
                     "insert into resource_library values (?,?,?,?,?,?,?,?)",
                     (assessment_resource_id, "assessment", assessment_id, assessment_title, assessment_description, json.dumps(assessment_payload, ensure_ascii=False), now, now),
                 )
                 db.execute("insert into class_resource_assignments values (?,?,?,?,?)", (class_id, assessment_resource_id, 1, now, now))
+                assessment_resource_ids.append(assessment_resource_id)
             db.commit()
         except (ValueError, OSError, sqlite3.Error) as exc:
             try:
@@ -802,9 +821,46 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
             return jsonify({"error": str(exc) or "课件上传失败。"}), 400
         return jsonify({
             "ok": True, "courseResourceId": course_resource_id,
-            "assessmentResourceId": assessment_resource_id, "path": path,
-            "message": "课件与配套测评已同步到当前班级。" if assessment_resource_id else "课件已同步到当前班级。",
+            "assessmentResourceId": assessment_resource_ids[0] if assessment_resource_ids else None,
+            "assessmentResourceIds": assessment_resource_ids, "path": path,
+            "message": f"课件与{len(assessment_resource_ids)}套配套测评已同步到当前班级。" if assessment_resource_ids else "课件已同步到当前班级。",
         })
+
+    @app.delete("/api/admin/course-resources/<path:resource_id>")
+    @require_admin
+    def delete_uploaded_course(resource_id: str):
+        db = get_db()
+        resource = db.execute("select * from resource_library where id=? and kind='course'", (resource_id,)).fetchone()
+        if not resource:
+            return jsonify({"error": "课件不存在。"}), 404
+        payload = json.loads(resource["payload_json"] or "{}")
+        if not payload.get("uploaded"):
+            return jsonify({"error": "系统内置课件不能删除，只能取消分配。"}), 400
+        linked_resources = []
+        for row in db.execute("select id, source_id, payload_json from resource_library where kind='assessment'").fetchall():
+            assessment_payload = json.loads(row["payload_json"] or "{}")
+            if assessment_payload.get("uploadedWithCourse") == resource_id:
+                linked_resources.append(row)
+        assessment_ids = [row["source_id"] for row in linked_resources if row["source_id"]]
+        resource_ids = [resource_id, *[row["id"] for row in linked_resources]]
+        try:
+            if assessment_ids:
+                placeholders = ",".join("?" for _ in assessment_ids)
+                db.execute(f"delete from assessment_attempts where assessment_id in ({placeholders})", assessment_ids)
+                db.execute(f"delete from assessments where id in ({placeholders})", assessment_ids)
+            placeholders = ",".join("?" for _ in resource_ids)
+            db.execute(f"delete from class_resource_assignments where resource_id in ({placeholders})", resource_ids)
+            db.execute(f"delete from resource_library where id in ({placeholders})", resource_ids)
+            db.execute("delete from course_progress where course_id=?", (resource["source_id"],))
+            db.execute("delete from course_catalog where id=?", (resource["source_id"],))
+            db.commit()
+        except sqlite3.Error as exc:
+            db.rollback()
+            return jsonify({"error": f"删除课件失败：{exc}"}), 400
+        package_id = str(payload.get("packageId") or "")
+        if re.fullmatch(r"course-[a-f0-9]{24}", package_id):
+            shutil.rmtree(Path(current_app.config["UPLOAD_ROOT"]) / "courseware" / package_id, ignore_errors=True)
+        return jsonify({"ok": True, "deletedAssessments": len(assessment_ids), "message": "课件及关联测评已删除。"})
 
     @app.patch("/api/admin/courses/<course_id>")
     @require_admin
