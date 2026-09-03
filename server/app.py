@@ -22,6 +22,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook
 from openpyxl.styles import Font
+from PIL import Image, ImageOps
 from pypinyin import Style, lazy_pinyin
 
 
@@ -39,6 +40,8 @@ ALLOWED_MEDIA = {
     "video/quicktime": ".mov",
 }
 LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+IMAGE_MAX_SIDE = 1800
+IMAGE_WEBP_QUALITY = 82
 
 
 def utc_now() -> datetime:
@@ -47,6 +50,98 @@ def utc_now() -> datetime:
 
 def iso_now() -> str:
     return utc_now().isoformat()
+
+
+def _normalized_image(source: Path) -> Image.Image:
+    with Image.open(source) as opened:
+        opened.seek(0)
+        image = ImageOps.exif_transpose(opened)
+        image.thumbnail((IMAGE_MAX_SIDE, IMAGE_MAX_SIDE), Image.Resampling.LANCZOS)
+        if image.mode not in {"RGB", "RGBA"}:
+            image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+        return image.copy()
+
+
+def compress_new_uploaded_image(source: Path, destination: Path) -> int:
+    """Validate an uploaded image and store a bounded WebP copy."""
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    try:
+        image = _normalized_image(source)
+        image.save(temporary, "WEBP", quality=IMAGE_WEBP_QUALITY, method=4)
+        os.replace(temporary, destination)
+        return destination.stat().st_size
+    finally:
+        temporary.unlink(missing_ok=True)
+        source.unlink(missing_ok=True)
+
+
+def compress_image_in_place(destination: Path, mime: str) -> int:
+    """Optimize a downloadable image while keeping its filename and format."""
+    before = destination.stat().st_size
+    temporary = destination.with_suffix(destination.suffix + ".optimize")
+    try:
+        image = _normalized_image(destination)
+        if mime == "image/jpeg":
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            image.save(temporary, "JPEG", quality=IMAGE_WEBP_QUALITY, optimize=True, progressive=True)
+        elif mime == "image/png":
+            image.save(temporary, "PNG", optimize=True, compress_level=9)
+        elif mime == "image/webp":
+            image.save(temporary, "WEBP", quality=IMAGE_WEBP_QUALITY, method=4)
+        else:
+            return before
+        if temporary.stat().st_size < before:
+            os.replace(temporary, destination)
+        return destination.stat().st_size
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def compress_existing_uploaded_images(db: sqlite3.Connection, upload_root: Path) -> dict[str, int]:
+    """Shrink existing image uploads in place so stored URLs never change."""
+    result = {"scanned": 0, "optimized": 0, "bytes_before": 0, "bytes_after": 0}
+    rows = db.execute(
+        "select id,relative_path,mime_type,size_bytes from media_uploads where mime_type like 'image/%'"
+    ).fetchall()
+    root = upload_root.resolve()
+    for row in rows:
+        if row["mime_type"] == "image/gif":
+            continue
+        destination = (root / row["relative_path"]).resolve()
+        if root not in destination.parents or not destination.is_file():
+            continue
+        result["scanned"] += 1
+        before = destination.stat().st_size
+        result["bytes_before"] += before
+        temporary = destination.with_suffix(destination.suffix + ".optimize")
+        try:
+            image = _normalized_image(destination)
+            mime = str(row["mime_type"] or "").lower()
+            if mime == "image/jpeg":
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
+                image.save(temporary, "JPEG", quality=IMAGE_WEBP_QUALITY, optimize=True, progressive=True)
+            elif mime == "image/png":
+                image.save(temporary, "PNG", optimize=True, compress_level=9)
+            elif mime == "image/webp":
+                image.save(temporary, "WEBP", quality=IMAGE_WEBP_QUALITY, method=4)
+            else:
+                continue
+            after = temporary.stat().st_size
+            if after < before:
+                os.replace(temporary, destination)
+                result["optimized"] += 1
+            else:
+                after = before
+            result["bytes_after"] += after
+            db.execute("update media_uploads set size_bytes=? where id=?", (after, row["id"]))
+        except Exception:
+            result["bytes_after"] += before
+        finally:
+            temporary.unlink(missing_ok=True)
+    db.commit()
+    return result
 
 
 def credentials_key() -> bytes:
@@ -150,6 +245,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         account_json=account_json,
         student_from_cookie=student_from_cookie,
         verify_admin_token=verify_admin_token,
+        compress_image_file=compress_image_in_place,
         json_body=json_body,
         iso_now=iso_now,
     )
@@ -484,7 +580,12 @@ def register_routes(app: Flask) -> None:
 
     @app.get("/uploads/<path:filename>")
     def uploaded_file(filename: str):
-        return send_from_directory(current_app.config["UPLOAD_ROOT"], filename, conditional=True)
+        response = send_from_directory(
+            current_app.config["UPLOAD_ROOT"], filename, conditional=True, max_age=31536000
+        )
+        response.cache_control.public = True
+        response.cache_control.immutable = True
+        return response
 
     @app.post("/api/admin/login")
     def admin_login():
@@ -1047,18 +1148,31 @@ def register_routes(app: Flask) -> None:
         date_parts = utc_now().strftime("%Y/%m").split("/")
         relative_dir = Path(*folder_parts, *date_parts)
         upload_id = str(uuid.uuid4())
-        relative_path = (relative_dir / f"{upload_id}{extension}").as_posix()
         root = Path(current_app.config["UPLOAD_ROOT"]).resolve()
+        is_compressible_image = mime.startswith("image/") and mime != "image/gif"
+        stored_extension = ".webp" if is_compressible_image else extension
+        relative_path = (relative_dir / f"{upload_id}{stored_extension}").as_posix()
         destination = (root / relative_path).resolve()
         if root not in destination.parents:
             return jsonify({"error": "上传目录无效。"}), 400
         destination.parent.mkdir(parents=True, exist_ok=True)
-        uploaded.save(destination)
-        size = destination.stat().st_size
+        incoming = destination.with_suffix(destination.suffix + ".upload")
+        uploaded.save(incoming)
+        size = incoming.stat().st_size
         max_size = 200 * 1024 * 1024 if mime.startswith("video/") else 25 * 1024 * 1024
         if size <= 0 or size > max_size:
-            destination.unlink(missing_ok=True)
+            incoming.unlink(missing_ok=True)
             return jsonify({"error": "图片不能超过 25MB，视频不能超过 200MB。"}), 413
+        if is_compressible_image:
+            try:
+                size = compress_new_uploaded_image(incoming, destination)
+                mime = "image/webp"
+            except Exception:
+                incoming.unlink(missing_ok=True)
+                destination.unlink(missing_ok=True)
+                return jsonify({"error": "图片文件损坏或格式无法识别。"}), 400
+        else:
+            os.replace(incoming, destination)
         owner_kind = "admin" if admin else "student"
         owner_id = str((admin or {}).get("id") if admin else student["id"])
         db = get_db()

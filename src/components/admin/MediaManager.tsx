@@ -43,7 +43,7 @@ export default function MediaManager({ recordId, items, onChange }: { recordId: 
     <div className="media-manager">
       <div className="media-manager-title"><div><label>课堂照片与视频</label><p>图片会自动压缩；单个视频不超过 50MB。</p></div><button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>{uploading ? <LoaderCircle className="spin" /> : <UploadCloud />} {uploading ? '正在上传' : '选择文件'}</button></div>
       <input ref={inputRef} hidden multiple type="file" accept="image/*,video/mp4,video/webm,video/quicktime" onChange={(event) => event.target.files && uploadFiles(event.target.files)} />
-      {items.length ? <div className="admin-media-grid">{items.map((item) => <div key={item.id}>{item.kind === 'image' ? <img src={item.url} alt="课堂记录" /> : <video src={item.url} muted />}<span>{item.kind === 'image' ? <ImagePlus /> : <Play />}</span><button type="button" onClick={() => remove(item)}><Trash2 /></button></div>)}</div> : <div className="media-drop-empty"><ImagePlus /><span>保存评价后，可上传这节课的照片和短视频</span></div>}
+      {items.length ? <div className="admin-media-grid">{items.map((item) => <div key={item.id}>{item.kind === 'image' ? <img src={item.url} alt="课堂记录" loading="lazy" decoding="async" /> : <video src={item.url} muted preload="none" />}<span>{item.kind === 'image' ? <ImagePlus /> : <Play />}</span><button type="button" onClick={() => remove(item)}><Trash2 /></button></div>)}</div> : <div className="media-drop-empty"><ImagePlus /><span>保存评价后，可上传这节课的照片和短视频</span></div>}
     </div>
   )
 }

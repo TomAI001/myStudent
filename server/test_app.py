@@ -6,7 +6,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app import create_app, get_db
+from PIL import Image
+
+from app import compress_existing_uploaded_images, create_app, get_db
 from core_data import migrate_embedded_data_images
 
 
@@ -128,16 +130,50 @@ class ApiTests(unittest.TestCase):
 
     def test_logged_in_student_can_upload_media(self):
         self.client.post("/api/student/login", json={"username": "student01", "password": "123456"})
+        original = io.BytesIO()
+        Image.new("RGB", (2400, 1600), "#4c8df6").save(original, "PNG")
+        original.seek(0)
         response = self.client.post("/api/media/upload", data={
             "folder": "homework/demo",
-            "file": (io.BytesIO(b"small-image"), "work.png", "image/png"),
+            "file": (original, "work.png", "image/png"),
         }, content_type="multipart/form-data")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json["url"].startswith("/uploads/homework/demo/"))
+        self.assertTrue(response.json["url"].endswith(".webp"))
         downloaded = self.client.get(response.json["url"])
         self.assertEqual(downloaded.status_code, 200)
-        self.assertEqual(downloaded.data, b"small-image")
+        self.assertIn("immutable", downloaded.headers["Cache-Control"])
+        with Image.open(io.BytesIO(downloaded.data)) as image:
+            self.assertEqual(image.format, "WEBP")
+            self.assertLessEqual(max(image.size), 1800)
         downloaded.close()
+
+    def test_existing_uploaded_photos_are_compressed_without_changing_url(self):
+        relative = "records/example/large.png"
+        destination = self.upload_root / relative
+        destination.parent.mkdir(parents=True)
+        Image.new("RGB", (2400, 1600), "#86d38b").save(destination, "PNG")
+        before = destination.stat().st_size
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """insert into media_uploads
+                   (id,owner_kind,owner_id,relative_path,original_name,mime_type,size_bytes,created_at)
+                   values ('existing-image','admin','teacher',?,'large.png','image/png',?,'2026-09-03')""",
+                (relative, before),
+            )
+            db.commit()
+            result = compress_existing_uploaded_images(db, self.upload_root)
+            self.assertEqual(result["scanned"], 1)
+            self.assertEqual(result["optimized"], 1)
+            stored_size = db.execute(
+                "select size_bytes from media_uploads where id='existing-image'"
+            ).fetchone()[0]
+        self.assertEqual(stored_size, destination.stat().st_size)
+        self.assertLess(destination.stat().st_size, before)
+        with Image.open(destination) as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertLessEqual(max(image.size), 1800)
 
     def test_parent_uses_prefixed_student_account_and_same_password(self):
         created = self.client.post("/api/admin/student-accounts", headers=self.admin_headers(), json={

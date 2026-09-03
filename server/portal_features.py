@@ -256,6 +256,7 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
                              require_parent: Callable,
                              account_json: Callable,
                              student_from_cookie: Callable, verify_admin_token: Callable,
+                             compress_image_file: Callable,
                              json_body: Callable, iso_now: Callable) -> None:
     def settings_key() -> bytes:
         secret = str(current_app.config.get("SETTINGS_ENCRYPTION_SECRET") or current_app.config.get("ADMIN_TEST_TOKEN") or current_app.config["DATABASE"])
@@ -924,7 +925,11 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
         allowed={".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".txt",".md",".csv",".jpg",".jpeg",".png",".webp",".gif",".mp4",".webm",".mov",".py",".zip"}
         if Path(filename).suffix.lower() not in allowed:dest.unlink(missing_ok=True);return jsonify({"error":"不支持这种文件格式。"}),400
         owner_kind="admin" if admin else "student"; owner_id=str(g.get("admin_user",{}).get("id","admin")) if admin else student["id"]; student_name=None if admin else student["student_name"]
-        date=datetime.now().strftime("%Y-%m-%d"); display=filename if admin else f"{student_name}_{date}_{filename}"; mime=uploaded.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"; db=get_db()
+        date=datetime.now().strftime("%Y-%m-%d"); display=filename if admin else f"{student_name}_{date}_{filename}"; mime=uploaded.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        if mime in {"image/jpeg","image/png","image/webp"}:
+            try: compress_image_file(dest,mime)
+            except Exception: dest.unlink(missing_ok=True);return jsonify({"error":"图片文件损坏或格式无法识别。"}),400
+        db=get_db()
         db.execute("""insert into shared_files
           (id,class_id,owner_kind,owner_id,student_name,original_name,stored_path,display_name,mime_type,size_bytes,created_at,purpose)
           values (?,?,?,?,?,?,?,?,?,?,?,?)""",

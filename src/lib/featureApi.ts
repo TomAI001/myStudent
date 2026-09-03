@@ -35,6 +35,9 @@ export type StudentFeatureState = {
 export async function getAdminFeatureState(classId:string) {
   return read<FeatureState>(await fetch(`${API_BASE}/admin/feature-state?class_id=${encodeURIComponent(classId)}`, { headers:await headers(false), credentials:'include' }))
 }
+export async function getAdminAccounts(classId:string) {
+  return read<{accounts:FeatureAccount[]}>(await fetch(`${API_BASE}/admin/student-accounts?class_id=${encodeURIComponent(classId)}`, { headers:await headers(false), credentials:'include' }))
+}
 export async function getStudentFeatureState(classId='') { return read<StudentFeatureState>(await fetch(`${API_BASE}/student/feature-state${classId?`?class_id=${encodeURIComponent(classId)}`:''}`, { credentials:'include' })) }
 export async function adminAction(path:string, method='POST', body?:unknown) {
   return read<any>(await fetch(`${API_BASE}${path}`, { method, headers:await headers(body !== undefined), credentials:'include', body:body === undefined?undefined:JSON.stringify(body) }))

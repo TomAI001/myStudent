@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Modal from '../../../components/admin/Modal'
 import { EmptyState, PageLoader } from '../../../components/States'
 import { createStudent, getClasses, getStudents, updateStudent } from '../../../lib/data'
-import { adminAction, commitStudentImport, downloadStudentImportTemplate, getAdminFeatureState, previewStudentImport, type FeatureAccount, type StudentImportRow } from '../../../lib/featureApi'
+import { adminAction, commitStudentImport, downloadStudentImportTemplate, getAdminAccounts, previewStudentImport, type FeatureAccount, type StudentImportRow } from '../../../lib/featureApi'
 import type { Student } from '../../../lib/types'
 import { uploadPublicFile } from '../../../lib/uploads'
 
@@ -33,8 +33,10 @@ export default function StudentsPanel({ classId }: { classId: string }) {
   const load = useCallback(async () => {
     if (!classId) return setStudents([])
     setLoading(true)
-    const [studentList, featureState, classList] = await Promise.all([getStudents(classId), getAdminFeatureState(classId), getClasses()])
-    setStudents(studentList); setAccounts(featureState.accounts); setClasses(classList); setLoading(false)
+    try {
+      const [studentList, accountState, classList] = await Promise.all([getStudents(classId), getAdminAccounts(classId), getClasses()])
+      setStudents(studentList); setAccounts(accountState.accounts); setClasses(classList)
+    } finally { setLoading(false) }
   }, [classId])
   useEffect(() => { load() }, [load])
 

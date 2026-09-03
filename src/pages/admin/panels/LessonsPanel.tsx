@@ -6,7 +6,7 @@ import Modal from '../../../components/admin/Modal'
 import RichTextEditor from '../../../components/admin/RichTextEditor'
 import { EmptyState, PageLoader } from '../../../components/States'
 import { emptyScores, type AbilityScores } from '../../../lib/abilities'
-import { createLesson, deleteLesson, getLessons, getRecord, getStudents, updateLesson, upsertRecord } from '../../../lib/data'
+import { createLesson, deleteLesson, getLesson, getLessons, getRecord, getStudents, updateLesson, upsertRecord } from '../../../lib/data'
 import { adminAction, generateCourseDraft } from '../../../lib/featureApi'
 import type { Lesson, LessonRecordWithMedia, Student } from '../../../lib/types'
 
@@ -35,9 +35,18 @@ export default function LessonsPanel({ classId, termId }: { classId: string; ter
   useEffect(() => { load() }, [load])
 
   const filtered = useMemo(() => lessons.filter((item) => item.title.includes(query.trim())), [lessons, query])
-  const open = (lesson: Lesson | 'new') => {
-    setEditing(lesson)
-    setForm(lesson === 'new' ? { ...emptyLesson, sequence_no: lessons.length + 1, lesson_date: new Date().toISOString().slice(0, 10) } : { sequence_no: lesson.sequence_no, title: lesson.title, lesson_date: lesson.lesson_date, summary: lesson.summary || '', content_html: lesson.content_html })
+  const open = async (lesson: Lesson | 'new') => {
+    if (lesson === 'new') {
+      setEditing(lesson)
+      setForm({ ...emptyLesson, sequence_no: lessons.length + 1, lesson_date: new Date().toISOString().slice(0, 10) })
+      return
+    }
+    try {
+      const detail = await getLesson(lesson.id)
+      if (!detail) throw new Error('没有找到这节课程。')
+      setEditing(detail)
+      setForm({ sequence_no: detail.sequence_no, title: detail.title, lesson_date: detail.lesson_date, summary: detail.summary || '', content_html: detail.content_html })
+    } catch (reason) { window.alert(reason instanceof Error ? reason.message : '课程正文读取失败。') }
   }
 
   const saveLesson = async (event: React.FormEvent) => {
