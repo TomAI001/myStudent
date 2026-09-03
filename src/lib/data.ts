@@ -55,6 +55,11 @@ export function getLessons(termId: string) {
   return getItems<Lesson>(`/data/lessons?term_id=${encodeURIComponent(termId)}`)
 }
 
+export async function getLesson(id: string): Promise<Lesson | null> {
+  const response = await fetch(`${API_BASE}/data/lessons/${encodeURIComponent(id)}`, { credentials: 'include' })
+  return (await read<{ item: Lesson | null }>(response)).item
+}
+
 export function getHomework(termId: string) {
   return getItems<Homework>(`/data/homework?term_id=${encodeURIComponent(termId)}`)
 }

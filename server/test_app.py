@@ -6,7 +6,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app import create_app
+from app import create_app, get_db
+from core_data import migrate_embedded_data_images
 
 
 class ApiTests(unittest.TestCase):
@@ -14,10 +15,11 @@ class ApiTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.db_path = root / "test.db"
+        self.upload_root = root / "uploads"
         self.app = create_app({
             "TESTING": True,
             "DATABASE": str(self.db_path),
-            "UPLOAD_ROOT": str(root / "uploads"),
+            "UPLOAD_ROOT": str(self.upload_root),
             "ADMIN_TEST_TOKEN": "teacher-test-token",
             "ADMIN_BOOTSTRAP_EMAIL": "teacher@example.com",
             "ADMIN_BOOTSTRAP_PASSWORD": "123456",
@@ -57,6 +59,10 @@ class ApiTests(unittest.TestCase):
         })
         self.assertEqual(lesson_response.status_code, 201, lesson_response.json)
         lesson_id = lesson_response.json["item"]["id"]
+        lesson_list = self.client.get(f"/api/data/lessons?term_id={term_id}")
+        self.assertEqual(lesson_list.json["items"][0]["content_html"], "")
+        lesson_detail = self.client.get(f"/api/data/lessons/{lesson_id}")
+        self.assertEqual(lesson_detail.json["item"]["content_html"], "<p>内容</p>")
         record_response = self.client.put("/api/admin/records", json={
             "lesson_id": lesson_id, "student_id": student_id, "comment": "很好",
             "thinking_score": 5, "focus_score": 4, "creativity_score": 3,
@@ -68,6 +74,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(listed.json["items"][0]["name"], "测试学生")
         self.assertEqual(self.client.post("/api/admin/logout").status_code, 200)
         self.assertEqual(self.client.get("/api/admin/session").status_code, 401)
+
+    def test_embedded_data_image_is_extracted_and_compressed(self):
+        pixel = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl2sAAAAASUVORK5CYII="
+        )
+        with self.app.app_context():
+            db = get_db()
+            db.execute("insert into classes values ('image-class','图片班',null,'2026-09-03')")
+            db.execute("insert into terms values ('image-term','image-class','秋季','2026-09-01','2027-01-01','2026-09-03')")
+            db.execute(
+                """insert into lessons
+                   (id,class_id,term_id,sequence_no,title,lesson_date,summary,content_html,created_at)
+                   values ('image-lesson','image-class','image-term',1,'图片课','2026-09-03',null,?,'2026-09-03')""",
+                (f'<p>图片</p><img src="data:image/png;base64,{pixel}">',),
+            )
+            db.commit()
+            self.assertEqual(migrate_embedded_data_images(db, self.upload_root), 1)
+            html = db.execute("select content_html from lessons where id='image-lesson'").fetchone()[0]
+            self.assertNotIn("data:image", html)
+            self.assertIn("/uploads/migrated-media/", html)
+            relative = html.split('/uploads/', 1)[1].split('"', 1)[0]
+            self.assertTrue((self.upload_root / relative).is_file())
 
     def test_migrated_password_is_hashed_and_login_is_shared_server_side(self):
         db = sqlite3.connect(self.db_path)

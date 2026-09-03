@@ -9,7 +9,7 @@ import PublicShell from '../components/PublicShell'
 import RichContent from '../components/RichContent'
 import { EmptyState, ErrorState, PageLoader } from '../components/States'
 import { abilities, type AbilityScores } from '../lib/abilities'
-import { getClass, getLessons, getStudent, getStudentRecords, getTerms } from '../lib/data'
+import { getClass, getLesson, getLessons, getStudent, getStudentRecords, getTerms } from '../lib/data'
 import type { ClassGroup, Lesson, LessonRecordWithMedia, Student, Term } from '../lib/types'
 
 type AssessmentLessonScore = { assessmentId:string; lessonId:string; sequence:number; title:string; score:number|null; total:number; attempt:number; submittedAt:string|null }
@@ -24,6 +24,8 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
   const [terms, setTerms] = useState<Term[]>([])
   const [termId, setTermId] = useState('')
   const [lessons, setLessons] = useState<Lesson[]>([])
+  const [lessonDetails,setLessonDetails]=useState<Record<string,Lesson>>({})
+  const [lessonDetailLoading,setLessonDetailLoading]=useState('')
   const [records, setRecords] = useState<LessonRecordWithMedia[]>([])
   const [loading, setLoading] = useState(true)
   const [contentLoading, setContentLoading] = useState(false)
@@ -49,15 +51,25 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
   useEffect(() => {
     if (!termId) return
     setContentLoading(true)
+    setLessonDetails({})
     getLessons(termId)
       .then(async (lessonList) => {
         setLessons(lessonList)
-        setActiveLessonId(current=>current||lessonList.at(-1)?.id||'')
+        setActiveLessonId(lessonList.at(-1)?.id||'')
         setRecords(await getStudentRecords(studentId, lessonList.map((item) => item.id)))
       })
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setContentLoading(false))
   }, [termId, studentId])
+  useEffect(()=>{
+    if(!activeLessonId||lessonDetails[activeLessonId])return
+    let active=true
+    setLessonDetailLoading(activeLessonId)
+    getLesson(activeLessonId).then(item=>{
+      if(active&&item)setLessonDetails(current=>({...current,[item.id]:item}))
+    }).catch((reason:Error)=>active&&setError(reason.message)).finally(()=>active&&setLessonDetailLoading(''))
+    return()=>{active=false}
+  },[activeLessonId,lessonDetails])
   useEffect(()=>{if(!student)return;fetch('/api/parent/assessment-trend',{credentials:'include'}).then(response=>response.ok?response.json():{items:[],lessons:[],studentMatched:false}).then(data=>setAssessmentTrend({items:data.items||[],lessons:data.lessons||[],studentMatched:Boolean(data.studentMatched)})).catch(()=>setAssessmentTrend({items:[],lessons:[],studentMatched:false}))},[studentId,student])
   useEffect(()=>{if(!studentIdOverride||!termId)return;fetch(`/api/parent/attendance?term_id=${encodeURIComponent(termId)}`,{credentials:'include'}).then(response=>response.ok?response.json():{groups:[]}).then(data=>setAttendance({groups:data.groups||[]})).catch(()=>setAttendance({groups:[]}))},[studentIdOverride,termId])
 
@@ -130,6 +142,7 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
               <div className="leaf-timeline">
                 {[...lessons].reverse().map((lesson, index) => {
                   const record = recordMap.get(lesson.id)
+                  const lessonDetail=lessonDetails[lesson.id]
                   return (
                     <article className={`leaf-lesson ${activeLessonId===lesson.id?'open':''}`} key={lesson.id}>
                       <button className="leaf-course-button" onClick={()=>setActiveLessonId(current=>current===lesson.id?'':lesson.id)}><span>{String(lesson.sequence_no).padStart(2,'0')}</span><div><small>{lesson.lesson_date}</small><strong>{lesson.title}</strong></div><aside><em className={assessmentBySequence.get(lesson.sequence_no)?.score==null?'pending':''}>{assessmentBySequence.get(lesson.sequence_no)?.score==null?'未测评':`测评 ${assessmentBySequence.get(lesson.sequence_no)?.score}/${assessmentBySequence.get(lesson.sequence_no)?.total}`}</em>{activeLessonId===lesson.id?<ChevronDown/>:<ChevronRight/>}</aside></button>
@@ -139,7 +152,7 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
                           <span className="lesson-stamp">第 {lessons.length-index} 站</span>
                         </header>
                         <div className={`lesson-assessment-score ${assessmentBySequence.get(lesson.sequence_no)?.score==null?'pending':''}`}><ClipboardCheck/><div><small>本节课测评成绩</small><strong>{assessmentBySequence.get(lesson.sequence_no)?.score==null?'尚未完成测评':`${assessmentBySequence.get(lesson.sequence_no)?.score} / ${assessmentBySequence.get(lesson.sequence_no)?.total} 分`}</strong>{assessmentBySequence.get(lesson.sequence_no)?.attempt?<span>最近一次为第 {assessmentBySequence.get(lesson.sequence_no)?.attempt} 次作答</span>:<span>完成学生端测评后，这里会自动更新</span>}</div>{assessmentBySequence.get(lesson.sequence_no)?.score!=null&&<CheckCircle2/>}</div>
-                        <div className="course-content"><h4><CodeXml size={18} /> 这节课学了什么</h4><RichContent html={lesson.content_html} /></div>
+                        <div className="course-content"><h4><CodeXml size={18} /> 这节课学了什么</h4>{lessonDetail?<RichContent html={lessonDetail.content_html} />:<PageLoader label={lessonDetailLoading===lesson.id?'正在打开本节课…':'准备课程内容…'} />}</div>
                         {record ? (
                           <div className="student-record">
                             <div className="record-grid">

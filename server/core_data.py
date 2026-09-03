@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import mimetypes
 import os
@@ -8,11 +10,15 @@ import sqlite3
 import urllib.request
 import time
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from flask import current_app, g, jsonify, request
+
+
+DATA_IMAGE_RE = re.compile(r"data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\r\n]+)")
 
 
 def ensure_core_schema(db: sqlite3.Connection) -> None:
@@ -152,9 +158,16 @@ def register_core_routes(
     def list_lessons():
         term_id = request.args.get("term_id", "").strip()
         rows = get_db().execute(
-            "select * from lessons where term_id=? order by sequence_no", (term_id,)
+            """select id,class_id,term_id,sequence_no,title,lesson_date,summary,
+                      '' as content_html,created_at
+               from lessons where term_id=? order by sequence_no""", (term_id,)
         ).fetchall()
         return jsonify({"items": [dict(row) for row in rows]})
+
+    @app.get("/api/data/lessons/<lesson_id>")
+    def read_lesson(lesson_id: str):
+        row = get_db().execute("select * from lessons where id=?", (lesson_id,)).fetchone()
+        return jsonify({"item": _dict(row)})
 
     @app.get("/api/data/homework")
     def list_homework():
@@ -439,6 +452,56 @@ def delete_server_upload(db: sqlite3.Connection, storage_path: str) -> None:
     db.execute("delete from media_uploads where id=?", (upload_id,))
 
 
+def migrate_embedded_data_images(db: sqlite3.Connection, upload_root: Path) -> int:
+    converted = 0
+    for table in ("lessons", "homework"):
+        rows = db.execute(f"select id,content_html,created_at from {table}").fetchall()
+        for row in rows:
+            html = row["content_html"] or ""
+            serial = 0
+
+            def replace(match: re.Match[str]) -> str:
+                nonlocal converted, serial
+                serial += 1
+                raw = base64.b64decode(re.sub(r"\s+", "", match.group(2)), validate=True)
+                digest = hashlib.sha256(raw).hexdigest()[:24]
+                upload_id = f"migration-inline-{digest}"
+                relative = f"migrated-media/inline-{digest}.webp"
+                destination = (upload_root / relative).resolve()
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if not destination.is_file():
+                    try:
+                        from PIL import Image
+
+                        with Image.open(BytesIO(raw)) as image:
+                            image.thumbnail((1800, 1800))
+                            if image.mode not in {"RGB", "RGBA"}:
+                                image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                            image.save(destination, "WEBP", quality=84, method=4)
+                    except Exception:
+                        suffix = mimetypes.guess_extension(match.group(1)) or ".bin"
+                        relative = f"migrated-media/inline-{digest}{suffix}"
+                        destination = (upload_root / relative).resolve()
+                        destination.write_bytes(raw)
+                mime = mimetypes.guess_type(destination.name)[0] or match.group(1)
+                db.execute(
+                    """insert or ignore into media_uploads
+                       (id,owner_kind,owner_id,relative_path,original_name,mime_type,size_bytes,created_at)
+                       values (?,?,?,?,?,?,?,?)""",
+                    (upload_id, "admin", f"{table}:{row['id']}", relative,
+                     f"embedded-{row['id']}-{serial}{destination.suffix}", mime,
+                     destination.stat().st_size, row["created_at"]),
+                )
+                converted += 1
+                return f"/uploads/{relative}"
+
+            updated = DATA_IMAGE_RE.sub(replace, html)
+            if updated != html:
+                db.execute(f"update {table} set content_html=? where id=?", (updated, row["id"]))
+    db.commit()
+    return converted
+
+
 def migrate_seed_directory(db: sqlite3.Connection, seed_dir: Path, upload_root: Path) -> dict[str, int]:
     ensure_core_schema(db)
     migrated_downloads = 0
@@ -529,6 +592,7 @@ def migrate_seed_directory(db: sqlite3.Connection, seed_dir: Path, upload_root: 
         )
     counts["media"] = len(media_rows)
     counts["downloaded_media"] = migrated_downloads
+    counts["embedded_images"] = migrate_embedded_data_images(db, upload_root)
     for student in _items(json.loads((seed_dir / "students.json").read_text(encoding="utf-8-sig"))):
         db.execute(
             """update student_accounts set student_id=?,student_name=?,updated_at=?
