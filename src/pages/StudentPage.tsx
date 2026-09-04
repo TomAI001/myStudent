@@ -1,4 +1,4 @@
-import { ArrowLeft, Calendar, CalendarCheck2, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CodeXml, MessageCircleHeart, Sparkles, TrendingUp, UserCheck } from 'lucide-react'
+import { ArrowLeft, Calendar, CalendarCheck2, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CodeXml, MessageCircleHeart, Send, Sparkles, TrendingUp, UserCheck } from 'lucide-react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -10,6 +10,7 @@ import RichContent from '../components/RichContent'
 import { EmptyState, ErrorState, PageLoader } from '../components/States'
 import { abilities, type AbilityScores } from '../lib/abilities'
 import { getClass, getLesson, getLessons, getStudent, getStudentRecords, getTerms } from '../lib/data'
+import { createParentFeedback, getParentFeedback, type ParentFeedbackMessage } from '../lib/serverApi'
 import type { ClassGroup, Lesson, LessonRecordWithMedia, Student, Term } from '../lib/types'
 
 type AssessmentLessonScore = { assessmentId:string; lessonId:string; sequence:number; title:string; score:number|null; total:number; attempt:number; submittedAt:string|null }
@@ -33,6 +34,10 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
   const [activeLessonId,setActiveLessonId]=useState('')
   const [assessmentTrend,setAssessmentTrend]=useState<AssessmentTrendData>({items:[],lessons:[],studentMatched:false})
   const [attendance,setAttendance]=useState<ParentAttendance>({groups:[]})
+  const [feedbackMessages,setFeedbackMessages]=useState<ParentFeedbackMessage[]>([])
+  const [feedbackContent,setFeedbackContent]=useState('')
+  const [feedbackSaving,setFeedbackSaving]=useState(false)
+  const [feedbackError,setFeedbackError]=useState('')
 
   useEffect(() => {
     getStudent(studentId)
@@ -72,6 +77,7 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
   },[activeLessonId,lessonDetails])
   useEffect(()=>{if(!student)return;fetch('/api/parent/assessment-trend',{credentials:'include'}).then(response=>response.ok?response.json():{items:[],lessons:[],studentMatched:false}).then(data=>setAssessmentTrend({items:data.items||[],lessons:data.lessons||[],studentMatched:Boolean(data.studentMatched)})).catch(()=>setAssessmentTrend({items:[],lessons:[],studentMatched:false}))},[studentId,student])
   useEffect(()=>{if(!studentIdOverride||!termId)return;fetch(`/api/parent/attendance?term_id=${encodeURIComponent(termId)}`,{credentials:'include'}).then(response=>response.ok?response.json():{groups:[]}).then(data=>setAttendance({groups:data.groups||[]})).catch(()=>setAttendance({groups:[]}))},[studentIdOverride,termId])
+  useEffect(()=>{if(!studentIdOverride)return;let active=true;getParentFeedback().then(messages=>{if(active)setFeedbackMessages(messages)}).catch(()=>{if(active)setFeedbackError('暂时无法读取反馈记录。')});return()=>{active=false}},[studentIdOverride])
 
   const recordMap = useMemo(() => new Map(records.map((record) => [record.lesson_id, record])), [records])
   const averages = useMemo<AbilityScores | null>(() => {
@@ -85,6 +91,7 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
   }, [records])
   const assessmentBySequence=useMemo(()=>new Map(assessmentTrend.lessons.map(item=>[item.sequence,item])),[assessmentTrend.lessons])
   const lessonScoreRows=useMemo(()=>lessons.map(lesson=>{const result=assessmentBySequence.get(lesson.sequence_no);return {sequence:lesson.sequence_no,label:`第${lesson.sequence_no}课`,title:lesson.title,score:result?.score??null,total:result?.total||100,percent:result?.score==null?null:Math.round(result.score/Math.max(1,result.total)*100),attempt:result?.attempt||0,submittedAt:result?.submittedAt||null}}),[lessons,assessmentBySequence])
+  const submitFeedback=async(event:React.FormEvent)=>{event.preventDefault();const content=feedbackContent.trim();if(!content||feedbackSaving)return;setFeedbackSaving(true);setFeedbackError('');try{const message=await createParentFeedback(content);setFeedbackMessages(current=>[...current,message]);setFeedbackContent('')}catch(reason){setFeedbackError(reason instanceof Error?reason.message:'意见发送失败，请稍后再试。')}finally{setFeedbackSaving(false)}}
 
   if (loading) return <PublicShell parentName={parentName} onParentLogout={onParentLogout}><div className="page-center"><PageLoader /></div></PublicShell>
   if (error || !student || !classGroup) return <PublicShell parentName={parentName} onParentLogout={onParentLogout}><div className="page-center"><ErrorState message={error || '没有找到这位同学。'} /></div></PublicShell>
@@ -131,6 +138,7 @@ export default function StudentPage({studentIdOverride,parentName,onParentLogout
             ) : <EmptyState title="成长图谱正在绘制" description="老师完成第一节课的评价后，这里会出现雷达图与趋势。" />}
             <article className="overview-card assessment-trend-card"><div className="card-title"><span><TrendingUp size={17}/></span><div><small>ASSESSMENT</small><h3>每节课测评成绩变化</h3><p>曲线采用百分制；每节课显示学生最近一次测评成绩。</p></div></div><div className="parent-score-chart"><ResponsiveContainer width="100%" height={260}><LineChart data={lessonScoreRows} margin={{top:18,right:18,left:-10,bottom:4}}><CartesianGrid strokeDasharray="3 3" stroke="#dce4df"/><XAxis dataKey="label" tick={{fontSize:10}}/><YAxis domain={[0,100]} ticks={[0,20,40,60,80,100]} tick={{fontSize:10}}/><Tooltip labelFormatter={(_,payload)=>payload?.[0]?.payload?.title||''} formatter={(value)=>[`${value}分`,'最近成绩']}/><Line type="monotone" dataKey="percent" connectNulls stroke="#2f7df6" strokeWidth={4} dot={{r:5,fill:'#fff',stroke:'#2f7df6',strokeWidth:3}} activeDot={{r:7}}/></LineChart></ResponsiveContainer>{!lessonScoreRows.some(item=>item.score!==null)&&<div className="chart-empty-note"><ClipboardCheck/><strong>还没有测评成绩</strong><span>学生完成测评后，成绩曲线会自动出现在这里。</span></div>}</div><div className="lesson-score-summary">{lessonScoreRows.map(item=><div className={item.score===null?'pending':''} key={item.sequence}><span>{String(item.sequence).padStart(2,'0')}</span><div><small>{item.label}</small><strong>{item.score===null?'未测评':`${item.score}/${item.total}`}</strong></div>{item.score!==null&&<em>{item.percent}分</em>}</div>)}</div></article>
             {studentIdOverride&&<details className="overview-card parent-attendance-card"><summary><span><CalendarCheck2/></span><div><small>ATTENDANCE</small><h3>课堂出勤记录</h3><p>点击展开，查看本学期到课和请假日期。</p></div><aside><b>{attendance.groups.reduce((sum,group)=>sum+group.present,0)}</b> 次到课<ChevronDown/></aside></summary><div className="parent-attendance-groups">{attendance.groups.some(group=>group.items.length)?attendance.groups.map(group=><section key={group.classId}><header><div><UserCheck/><span><strong>{group.className}</strong><small>本学期课堂记录</small></span></div><aside><b>{group.present}</b> 到课 <b>{group.leave}</b> 请假</aside></header><div>{group.items.map((item,index)=><article key={`${item.date}-${item.courseTitle}-${index}`}><time>{item.date.slice(5).replace('-','月')}日</time><span><strong>{item.courseTitle}</strong><small>{item.termName}</small></span><em className={item.status}>{item.status==='present'?'已到课':'请假'}</em></article>)}</div></section>):<div className="parent-attendance-empty"><Calendar/><strong>本学期还没有出勤记录</strong><span>老师开始课堂签到后，记录会显示在这里。</span></div>}</div></details>}
+            {studentIdOverride&&<article className="overview-card parent-feedback-card"><div className="card-title"><span><MessageCircleHeart size={17}/></span><div><small>PARENT FEEDBACK</small><h3>给老师的意见</h3><p>关于课程、学习体验或孩子的情况，都可以在这里留言。</p></div></div><div className="parent-feedback-history">{feedbackMessages.length?feedbackMessages.map(message=><div className={`parent-feedback-message ${message.author}`} key={message.id}><small>{message.author==='parent'?'我的留言':'老师回复'} · {new Date(message.createdAt).toLocaleString('zh-CN')}</small><p>{message.content}</p></div>):<div className="parent-feedback-empty">第一条留言，可以从这里开始。</div>}</div><form className="parent-feedback-form" onSubmit={submitFeedback}><textarea value={feedbackContent} onChange={event=>setFeedbackContent(event.target.value)} maxLength={2000} rows={4} placeholder="写下想和老师沟通的内容…"/><footer><span>{feedbackError||`${feedbackContent.length}/2000`}</span><button type="submit" disabled={feedbackSaving||!feedbackContent.trim()}><Send size={15}/>{feedbackSaving?'发送中…':'发送留言'}</button></footer></form></article>}
           </section>
 
           <section className="lesson-section section-pad">

@@ -148,6 +148,40 @@ class ApiTests(unittest.TestCase):
             self.assertLessEqual(max(image.size), 1800)
         downloaded.close()
 
+    def test_admin_can_upload_pdf_attachment(self):
+        pdf = io.BytesIO(b"%PDF-1.4\n% test attachment\n")
+        response = self.client.post("/api/media/upload", headers=self.admin_headers(), data={
+            "folder": "lessons/term-one",
+            "file": (pdf, "lesson-notes.pdf", "application/pdf"),
+        }, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertTrue(response.json["url"].startswith("/uploads/lessons/term-one/"))
+        self.assertTrue(response.json["url"].endswith(".pdf"))
+        downloaded = self.client.get(response.json["url"])
+        self.assertEqual(downloaded.status_code, 200)
+        self.assertEqual(downloaded.data, b"%PDF-1.4\n% test attachment\n")
+        downloaded.close()
+
+    def test_admin_can_upload_pdf_to_class_files(self):
+        pdf = io.BytesIO(b"%PDF-1.4\n% class file\n")
+        response = self.client.post("/api/files", headers=self.admin_headers(), data={
+            "classId": "class-one",
+            "file": (pdf, "class-notes.pdf", "application/pdf"),
+        }, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(response.json["displayName"], "class-notes.pdf")
+
+    def test_student_can_upload_pdf_with_chinese_filename(self):
+        login = self.client.post("/api/student/login", json={"username": "student01", "password": "123456"})
+        self.assertEqual(login.status_code, 200)
+        pdf = io.BytesIO(b"%PDF-1.4\n% student file\n")
+        response = self.client.post("/api/files", data={
+            "classId": "class-one",
+            "file": (pdf, "第一节课详细讲解笔记.pdf", "application/pdf"),
+        }, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertTrue(response.json["displayName"].endswith(".pdf"))
+
     def test_existing_uploaded_photos_are_compressed_without_changing_url(self):
         relative = "records/example/large.png"
         destination = self.upload_root / relative
@@ -204,6 +238,36 @@ class ApiTests(unittest.TestCase):
         login = self.client.post("/api/parent/login", json={"username": "aunbound01", "password": "parent88"})
         self.assertEqual(login.status_code, 401)
 
+    def test_parent_feedback_allows_a_private_conversation_with_teacher(self):
+        account = self.client.post("/api/admin/student-accounts", headers=self.admin_headers(), json={
+            "studentId": "feedback-profile", "studentName": "反馈同学", "username": "feedback01",
+            "password": "parent88", "classIds": ["class-one"],
+        })
+        self.assertEqual(account.status_code, 201, account.json)
+        login = self.client.post("/api/parent/login", json={"username": "afeedback01", "password": "parent88"})
+        self.assertEqual(login.status_code, 200, login.json)
+        created = self.client.post("/api/parent/feedback", json={"content": "孩子很喜欢课堂，希望多一些循环练习。"})
+        self.assertEqual(created.status_code, 201, created.json)
+        self.assertEqual(created.json["message"]["author"], "parent")
+        message_id = created.json["message"]["id"]
+        parent_messages = self.client.get("/api/parent/feedback")
+        self.assertEqual(len(parent_messages.json["messages"]), 1)
+
+        teacher_view = self.client.get("/api/admin/parent-feedback?class_id=class-one", headers=self.admin_headers())
+        self.assertEqual(teacher_view.status_code, 200, teacher_view.json)
+        self.assertEqual(teacher_view.json["messages"][0]["content"], "孩子很喜欢课堂，希望多一些循环练习。")
+        reply = self.client.post(
+            f"/api/admin/parent-feedback/{message_id}/reply", headers=self.admin_headers(),
+            json={"content": "收到，下节课会安排一组循序渐进的挑战题。"},
+        )
+        self.assertEqual(reply.status_code, 201, reply.json)
+        self.assertEqual(reply.json["message"]["author"], "teacher")
+
+        continued = self.client.post("/api/parent/feedback", json={"content": "谢谢老师，我们会继续练习。"})
+        self.assertEqual(continued.status_code, 201, continued.json)
+        history = self.client.get("/api/parent/feedback").json["messages"]
+        self.assertEqual([item["author"] for item in history], ["parent", "teacher", "parent"])
+
     def test_unbound_profile_can_be_recycled_restored_and_assigned(self):
         recycled = self.client.post("/api/admin/student-profiles/profile-new/recycle", headers=self.admin_headers(), json={
             "studentName": "新同学", "classId": "class-one",
@@ -247,7 +311,7 @@ class ApiTests(unittest.TestCase):
         package.seek(0)
         uploaded = self.client.post("/api/admin/course-packages", headers=self.admin_headers(), data={
             "classId": "class-one", "title": "第五课", "subtitle": "列表练习", "sequence": "5",
-            "syncAssessment": "true", "file": (package, "lesson-five.zip", "application/zip"),
+            "syncAssessment": "true", "category": "循环", "file": (package, "lesson-five.zip", "application/zip"),
         }, content_type="multipart/form-data")
         self.assertEqual(uploaded.status_code, 200, uploaded.json)
         self.assertIsNotNone(uploaded.json["assessmentResourceId"])
@@ -258,6 +322,16 @@ class ApiTests(unittest.TestCase):
         state = self.client.get("/api/admin/feature-state?class_id=class-one", headers=self.admin_headers()).json
         self.assertTrue(any(item["title"] == "第五课" and item["published"] for item in state["courses"]))
         self.assertTrue(any(item["title"] == "第五课课后测评" and item["published"] for item in state["assessments"]))
+        uploaded_course = next(item for item in state["resourceLibrary"] if item["id"] == uploaded.json["courseResourceId"])
+        self.assertEqual(uploaded_course["category"], "循环")
+        uploaded_assessment = next(item for item in state["resourceLibrary"] if item["id"] == uploaded.json["assessmentResourceId"])
+        self.assertEqual(uploaded_assessment["category"], "循环")
+        changed = self.client.put(f"/api/admin/class-resources/{uploaded_assessment['id']}", headers=self.admin_headers(), json={
+            "classId": "class-one", "assigned": True, "enabled": True, "category": "课后测评",
+        })
+        self.assertEqual(changed.status_code, 200)
+        refreshed = self.client.get("/api/admin/feature-state?class_id=class-one", headers=self.admin_headers()).json
+        self.assertEqual(next(item for item in refreshed["resourceLibrary"] if item["id"] == uploaded_assessment["id"])["category"], "课后测评")
 
     def test_attendance_start_auto_checkin_manual_leave_and_export(self):
         from openpyxl import load_workbook

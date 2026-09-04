@@ -11,6 +11,8 @@ import re
 import shutil
 import socket
 import sqlite3
+import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -429,12 +431,21 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
               source text not null default 'system', updated_at text not null,
               primary key(session_id, student_key)
             );
+            create table if not exists parent_feedback_messages (
+              id text primary key,
+              account_id text not null references student_accounts(id) on delete cascade,
+              class_id text not null,
+              author_kind text not null check(author_kind in ('parent','teacher')),
+              content text not null,
+              created_at text not null
+            );
             create index if not exists assessment_attempt_account_idx on assessment_attempts(account_id, submitted_at);
             create index if not exists homework_submission_idx on homework_submissions(homework_id, account_id);
             create index if not exists plaza_status_idx on plaza_posts(class_id, status, created_at);
             create index if not exists class_resource_kind_idx on class_resource_assignments(class_id, enabled);
             create index if not exists attendance_session_term_idx on attendance_sessions(class_id, term_id, session_date);
             create index if not exists attendance_record_account_idx on attendance_records(account_id, session_id);
+            create index if not exists parent_feedback_class_idx on parent_feedback_messages(class_id, account_id, created_at);
             """
         )
         add_column("shared_files", "purpose", "text not null default 'class'")
@@ -525,6 +536,7 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
                 "downloadUrl": f"/api/files/{row['id']}/download"}
 
     def resource_dict(row, class_id: str) -> dict[str, Any]:
+        payload = json.loads(row["payload_json"] or "{}")
         assignment = get_db().execute(
             "select enabled from class_resource_assignments where class_id=? and resource_id=?",
             (class_id, row["id"]),
@@ -532,7 +544,7 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
         return {
             "id": row["id"], "kind": row["kind"], "sourceId": row["source_id"],
             "title": row["title"], "description": row["description"],
-            "payload": json.loads(row["payload_json"] or "{}"),
+            "category": str(payload.get("category", "")), "payload": payload,
             "assigned": bool(assignment), "enabled": bool(assignment["enabled"]) if assignment else False,
         }
 
@@ -692,6 +704,46 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
         body=json_body();now=iso_now();db=get_db();title=str(body.get("title","我的Python作品"))[:120];code=str(body.get("code",""))[:200000]
         db.execute("""insert into code_projects values (?,?,?,?,?,?) on conflict(id) do update set title=excluded.title,code=excluded.code,updated_at=excluded.updated_at where account_id=excluded.account_id""",(project_id,g.student_account["id"],title,code,now,now));db.commit();return jsonify({"ok":True,"updatedAt":now})
 
+    @app.post("/api/student/code/execute")
+    @require_student
+    def execute_cpp_code():
+        body = json_body()
+        code = str(body.get("code", ""))
+        if not code.strip():
+            return jsonify({"ok": False, "stage": "compile", "error": "请先输入 C++ 代码。"})
+        if len(code.encode("utf-8")) > 200000:
+            return jsonify({"ok": False, "stage": "compile", "error": "代码不能超过 200 KB。"})
+        blocked = re.search(r"#\s*include\s*<\s*(?:fstream|filesystem|sys/|unistd\.h|direct\.h)|\b(?:system|popen|exec(?:l|le|lp|v|ve|vp)?|fork)\s*\(", code, re.IGNORECASE)
+        if blocked:
+            return jsonify({"ok": False, "stage": "compile", "error": "代码实验室不允许访问文件、进程或系统命令。"})
+        compiler = current_app.config.get("CPP_COMPILER") or shutil.which("g++") or shutil.which("clang++")
+        if not compiler:
+            return jsonify({"ok": False, "stage": "compile", "error": "服务器尚未安装 C++ 编译器，请联系老师处理。"})
+        try:
+            with tempfile.TemporaryDirectory(prefix="growth-cpp-") as directory:
+                root = Path(directory)
+                source = root / "main.cpp"
+                binary = root / "main"
+                source.write_text(code, encoding="utf-8")
+                compile_result = subprocess.run(
+                    [compiler, "-std=c++17", "-O0", "-pipe", str(source), "-o", str(binary)],
+                    cwd=directory, capture_output=True, text=True, timeout=15,
+                )
+                if compile_result.returncode != 0:
+                    return jsonify({"ok": False, "stage": "compile", "output": (compile_result.stderr or compile_result.stdout)[-12000:]})
+                run_result = subprocess.run(
+                    [str(binary)], cwd=directory, capture_output=True, text=True, timeout=5,
+                )
+                output = (run_result.stdout + ("\n" if run_result.stdout and run_result.stderr else "") + run_result.stderr)[-20000:]
+                if run_result.returncode != 0:
+                    output = output or f"程序退出，代码：{run_result.returncode}"
+                    return jsonify({"ok": False, "stage": "run", "output": output})
+                return jsonify({"ok": True, "stage": "run", "output": output})
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "stage": "run", "error": "程序运行超过 5 秒，已自动停止。"})
+        except OSError:
+            return jsonify({"ok": False, "stage": "compile", "error": "C++ 编译器启动失败，请联系老师处理。"})
+
     @app.post("/api/admin/student-accounts/<account_id>/recycle")
     @require_admin
     def recycle_account(account_id: str):
@@ -738,6 +790,12 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
         if not class_id: return jsonify({"error": "请选择班级。"}), 400
         db = get_db(); resource = db.execute("select * from resource_library where id=?", (resource_id,)).fetchone()
         if not resource: return jsonify({"error": "资源不存在。"}), 404
+        if "category" in body:
+            payload = json.loads(resource["payload_json"] or "{}")
+            category = str(body.get("category", "")).strip()[:80]
+            if category: payload["category"] = category
+            else: payload.pop("category", None)
+            db.execute("update resource_library set payload_json=?,updated_at=? where id=?", (json.dumps(payload, ensure_ascii=False), iso_now(), resource_id))
         if not assigned:
             db.execute("delete from class_resource_assignments where class_id=? and resource_id=?", (class_id, resource_id))
         else:
@@ -766,6 +824,7 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
         title = str(request.form.get("title", "")).strip()[:160]
         subtitle = str(request.form.get("subtitle", "")).strip()[:500]
         sync_assessment = str(request.form.get("syncAssessment", "true")).lower() != "false"
+        category = str(request.form.get("category", "")).strip()[:80]
         if not class_id or not title:
             return jsonify({"error": "请填写课件名称并选择班级。"}), 400
         if not uploaded or not uploaded.filename or not uploaded.filename.lower().endswith(".zip"):
@@ -788,7 +847,7 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
                 "insert into course_catalog values (?,?,?,?,?,?,1,?,?)",
                 (course_id, class_id, sequence, title, subtitle, path, now, now),
             )
-            course_payload = {"sequence": sequence, "path": path, "subtitle": subtitle, "uploaded": True, "packageId": package_id}
+            course_payload = {"sequence": sequence, "path": path, "subtitle": subtitle, "uploaded": True, "packageId": package_id, "category": category}
             db.execute(
                 "insert into resource_library values (?,?,?,?,?,?,?,?)",
                 (course_resource_id, "course", course_id, title, subtitle, json.dumps(course_payload, ensure_ascii=False), now, now),
@@ -804,7 +863,7 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
                     "insert into assessments values (?,?,?,?,?,?,1,?,?)",
                     (assessment_id, class_id, lesson_id, assessment_title, assessment_description, json.dumps(questions, ensure_ascii=False), now, now),
                 )
-                assessment_payload = {"lessonId": lesson_id, "questions": questions, "uploadedWithCourse": course_resource_id, "assessmentIndex": assessment_index}
+                assessment_payload = {"lessonId": lesson_id, "questions": questions, "uploadedWithCourse": course_resource_id, "assessmentIndex": assessment_index, "category": category}
                 db.execute(
                     "insert into resource_library values (?,?,?,?,?,?,?,?)",
                     (assessment_resource_id, "assessment", assessment_id, assessment_title, assessment_description, json.dumps(assessment_payload, ensure_ascii=False), now, now),
@@ -976,10 +1035,14 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
         if purpose not in {"class", "homework"}: return jsonify({"error":"文件用途无效。"}),400
         if admin and purpose != "class": return jsonify({"error":"教师文件只能发布到班级文件中心。"}),400
         if not uploaded or not uploaded.filename or not class_id:return jsonify({"error":"请选择班级和文件。"}),400
-        filename=secure_filename(uploaded.filename) or "file"; file_id=str(uuid.uuid4()); relative=f"shared/{class_id}/{file_id}-{filename}"; root=Path(current_app.config["UPLOAD_ROOT"]).resolve(); dest=(root/relative).resolve(); dest.parent.mkdir(parents=True,exist_ok=True); uploaded.save(dest)
-        if dest.stat().st_size>200*1024*1024:dest.unlink(missing_ok=True);return jsonify({"error":"文件不能超过200MB。"}),413
         allowed={".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".txt",".md",".csv",".jpg",".jpeg",".png",".webp",".gif",".mp4",".webm",".mov",".py",".zip"}
-        if Path(filename).suffix.lower() not in allowed:dest.unlink(missing_ok=True);return jsonify({"error":"不支持这种文件格式。"}),400
+        original_name=str(uploaded.filename)
+        suffix=Path(original_name).suffix.lower()
+        if suffix not in allowed:return jsonify({"error":"不支持这种文件格式。"}),400
+        filename=secure_filename(original_name)
+        if not filename or Path(filename).suffix.lower()!=suffix:filename=f"file{suffix}"
+        file_id=str(uuid.uuid4()); relative=f"shared/{class_id}/{file_id}-{filename}"; root=Path(current_app.config["UPLOAD_ROOT"]).resolve(); dest=(root/relative).resolve(); dest.parent.mkdir(parents=True,exist_ok=True); uploaded.save(dest)
+        if dest.stat().st_size>200*1024*1024:dest.unlink(missing_ok=True);return jsonify({"error":"文件不能超过200MB。"}),413
         owner_kind="admin" if admin else "student"; owner_id=str(g.get("admin_user",{}).get("id","admin")) if admin else student["id"]; student_name=None if admin else student["student_name"]
         date=datetime.now().strftime("%Y-%m-%d"); display=filename if admin else f"{student_name}_{date}_{filename}"; mime=uploaded.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
         if mime in {"image/jpeg","image/png","image/webp"}:
@@ -1320,3 +1383,86 @@ def register_portal_features(app, *, get_db: Callable, require_admin: Callable, 
             lesson_scores.append({"assessmentId":assessment["id"],"lessonId":assessment["lesson_id"],"sequence":int(digits or 0),"title":assessment["title"],"score":latest["score"] if latest else None,"total":latest["total"] if latest else len(json.loads(assessment["questions_json"] or "[]"))*10,"attempt":latest["attempt"] if latest else 0,"submittedAt":latest["submitted_at"] if latest else None})
         history.sort(key=lambda item:item["submitted_at"])
         return jsonify({"items":history,"lessons":lesson_scores,"studentMatched":True,"classId":effective_class_id})
+
+    def parent_feedback_dict(row: Any) -> dict[str, Any]:
+        return {
+            "id": row["id"], "accountId": row["account_id"], "classId": row["class_id"],
+            "studentId": row["student_id"], "studentName": row["student_name"],
+            "author": row["author_kind"], "content": row["content"], "createdAt": row["created_at"],
+        }
+
+    @app.get("/api/parent/feedback")
+    @require_parent
+    def parent_feedback():
+        rows = get_db().execute(
+            """select m.*,a.student_id,a.student_name from parent_feedback_messages m
+               join student_accounts a on a.id=m.account_id
+               where m.account_id=? order by m.created_at""",
+            (g.parent_student_account["id"],),
+        ).fetchall()
+        return jsonify({"messages": [parent_feedback_dict(row) for row in rows]})
+
+    @app.post("/api/parent/feedback")
+    @require_parent
+    def create_parent_feedback():
+        content = str(json_body().get("content") or "").strip()
+        if not content:
+            return jsonify({"error": "请填写想告诉老师的内容。"}), 400
+        if len(content) > 2000:
+            return jsonify({"error": "意见内容不能超过2000个字。"}), 400
+        account = g.parent_student_account
+        try:
+            class_ids = json.loads(account["class_ids"] or "[]")
+        except (TypeError, ValueError):
+            class_ids = []
+        class_id = str(class_ids[0]).strip() if class_ids else str(current_app.config.get("DEFAULT_CLASS_ID", ""))
+        now = iso_now()
+        message_id = str(uuid.uuid4())
+        db = get_db()
+        db.execute(
+            "insert into parent_feedback_messages values (?,?,?,?,?,?)",
+            (message_id, account["id"], class_id, "parent", content, now),
+        )
+        db.commit()
+        row = db.execute(
+            """select m.*,a.student_id,a.student_name from parent_feedback_messages m
+               join student_accounts a on a.id=m.account_id where m.id=?""", (message_id,)
+        ).fetchone()
+        return jsonify({"message": parent_feedback_dict(row)}), 201
+
+    @app.get("/api/admin/parent-feedback")
+    @require_admin
+    def admin_parent_feedback():
+        class_id = request.args.get("class_id", "").strip()
+        rows = get_db().execute(
+            """select m.*,a.student_id,a.student_name from parent_feedback_messages m
+               join student_accounts a on a.id=m.account_id
+               where (?='' or m.class_id=?) order by m.created_at desc""",
+            (class_id, class_id),
+        ).fetchall()
+        return jsonify({"messages": [parent_feedback_dict(row) for row in rows]})
+
+    @app.post("/api/admin/parent-feedback/<message_id>/reply")
+    @require_admin
+    def reply_parent_feedback(message_id: str):
+        content = str(json_body().get("content") or "").strip()
+        if not content:
+            return jsonify({"error": "请填写回复内容。"}), 400
+        if len(content) > 2000:
+            return jsonify({"error": "回复内容不能超过2000个字。"}), 400
+        db = get_db()
+        source = db.execute("select account_id,class_id from parent_feedback_messages where id=?", (message_id,)).fetchone()
+        if not source:
+            return jsonify({"error": "这条家长意见不存在。"}), 404
+        now = iso_now()
+        reply_id = str(uuid.uuid4())
+        db.execute(
+            "insert into parent_feedback_messages values (?,?,?,?,?,?)",
+            (reply_id, source["account_id"], source["class_id"], "teacher", content, now),
+        )
+        db.commit()
+        row = db.execute(
+            """select m.*,a.student_id,a.student_name from parent_feedback_messages m
+               join student_accounts a on a.id=m.account_id where m.id=?""", (reply_id,)
+        ).fetchone()
+        return jsonify({"message": parent_feedback_dict(row)}), 201

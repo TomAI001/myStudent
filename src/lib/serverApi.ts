@@ -26,6 +26,17 @@ export interface ParentServerSession {
   classIds: string[]
 }
 
+export interface ParentFeedbackMessage {
+  id:string
+  accountId:string
+  classId:string
+  studentId:string
+  studentName:string
+  author:'parent'|'teacher'
+  content:string
+  createdAt:string
+}
+
 let parentSessionCache: { value: ParentServerSession | null; expiresAt: number } | null = null
 let parentSessionPending: Promise<ParentServerSession | null> | null = null
 
@@ -86,6 +97,16 @@ export function getParentServerSession():Promise<ParentServerSession|null>{
 }
 
 export async function logoutParentOnServer(){parentSessionCache=null;parentSessionPending=null;await fetch(`${API_BASE}/parent/logout`,{method:'POST',credentials:'include'})}
+
+export async function getParentFeedback():Promise<ParentFeedbackMessage[]>{
+  const response=await fetch(`${API_BASE}/parent/feedback`,{credentials:'include'})
+  return (await readResponse<{messages:ParentFeedbackMessage[]}>(response)).messages
+}
+
+export async function createParentFeedback(content:string):Promise<ParentFeedbackMessage>{
+  const response=await fetch(`${API_BASE}/parent/feedback`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})})
+  return (await readResponse<{message:ParentFeedbackMessage}>(response)).message
+}
 
 export async function changeStudentPasswordOnServer(currentPassword: string, nextPassword: string) {
   const response = await fetch(`${API_BASE}/student/password`, {

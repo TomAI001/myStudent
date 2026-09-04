@@ -1,4 +1,4 @@
-import { BookOpenText, CalendarCheck2, ChevronDown, ClipboardList, ExternalLink, Gamepad2, GraduationCap, LayoutDashboard, LogOut, Plus, Settings, UsersRound } from 'lucide-react'
+import { BookOpenText, CalendarCheck2, ChevronDown, ClipboardList, ExternalLink, Gamepad2, GraduationCap, LayoutDashboard, LogOut, MessageSquareText, Plus, Settings, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Modal from '../../components/admin/Modal'
@@ -12,8 +12,9 @@ import LessonsPanel from './panels/LessonsPanel'
 import HomeworkPanel from './panels/HomeworkPanelV2'
 import StudentPortalPanel from './panels/StudentPortalPanelV2'
 import AttendancePanel from './panels/AttendancePanel'
+import ParentFeedbackPanel from './panels/ParentFeedbackPanel'
 
-type Tab = 'overview' | 'students' | 'attendance' | 'lessons' | 'homework' | 'student_portal'
+type Tab = 'overview' | 'students' | 'attendance' | 'lessons' | 'homework' | 'parent_feedback' | 'student_portal'
 
 const navItems = [
   { id: 'overview' as const, label: '工作台', icon: LayoutDashboard },
@@ -21,6 +22,7 @@ const navItems = [
   { id: 'attendance' as const, label: '课堂签到', icon: CalendarCheck2 },
   { id: 'lessons' as const, label: '课程与评价', icon: BookOpenText },
   { id: 'homework' as const, label: '每日作业', icon: ClipboardList },
+  { id: 'parent_feedback' as const, label: '家长反馈', icon: MessageSquareText },
   { id: 'student_portal' as const, label: '学生端管理', icon: Gamepad2 },
 ]
 
@@ -106,6 +108,7 @@ export default function AdminDashboard() {
           {tab === 'attendance' && <AttendancePanel classId={classId} termId={termId} className={classes.find(item=>item.id===classId)?.name||''} termName={terms.find(item=>item.id===termId)?.name||''} />}
           {tab === 'lessons' && <LessonsPanel classId={classId} termId={termId} />}
           {tab === 'homework' && <HomeworkPanel classId={classId} termId={termId} />}
+          {tab === 'parent_feedback' && <ParentFeedbackPanel classId={classId} />}
           {tab === 'student_portal' && <StudentPortalPanel classId={classId} />}
         </main>
       </div>

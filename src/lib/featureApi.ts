@@ -14,7 +14,7 @@ async function read<T>(response: Response): Promise<T> {
 }
 
 export type FeatureAccount = { id:string; studentId:string|null; studentName:string; username:string; classIds:string[]; active:boolean; points:number; deletedAt:string|null; credentialsAssigned:boolean; currentPassword?:string|null; parentUsername?:string|null; parentName?:string }
-export type ClassResource = { id:string; kind:'course'|'assessment'|'typing'|'homework'|'file'|'community'; sourceId:string|null; title:string; description:string; payload:Record<string,unknown>; assigned:boolean; enabled:boolean }
+export type ClassResource = { id:string; kind:'course'|'assessment'|'typing'|'homework'|'file'|'community'; sourceId:string|null; title:string; description:string; category?:string; payload:Record<string,unknown>; assigned:boolean; enabled:boolean }
 export type FeatureCourse = { id:string; class_id:string; sequence:number; title:string; subtitle:string; path:string; published:boolean }
 export type FeatureQuestion = { id:string; type?:'choice'|'programming'; points?:number; title:string; options?:string[]; answer?:string; starterCode?:string }
 export type FeatureAssessment = { id:string; classId:string; lessonId:string; title:string; description:string; published:boolean; questions:FeatureQuestion[] }
@@ -22,6 +22,7 @@ export type TypingProgress = { account_id:string; student_name?:string; level:nu
 export type AttendanceStatus = 'unmarked'|'present'|'leave'
 export type AttendanceRecord = { sessionId:string; studentKey:string; accountId:string|null; studentId:string|null; studentName:string; status:AttendanceStatus; source:'system'|'auto'|'manual'; updatedAt:string }
 export type AttendanceSession = { id:string; classId:string; className:string; termId:string; termName:string; date:string; courseId:string|null; courseTitle:string; state:'open'|'closed'; createdAt:string; updatedAt:string; counts:Record<AttendanceStatus,number>; records:AttendanceRecord[] }
+export type ParentFeedbackMessage = { id:string; accountId:string; classId:string; studentId:string; studentName:string; author:'parent'|'teacher'; content:string; createdAt:string }
 export type StudentImportRow = { rowNumber:number; studentName:string; username:string; parentUsername:string; password:string }
 export type FeatureState = {
   accounts:FeatureAccount[]; courses:FeatureCourse[]; assessments:FeatureAssessment[]; attempts:any[];
@@ -49,8 +50,8 @@ export async function uploadSharedFile(file:File,classId:string) {
   const form=new FormData();form.append('file',file);form.append('classId',classId)
   return read<any>(await fetch(`${API_BASE}/files`,{method:'POST',headers:await headers(false),body:form,credentials:'include'}))
 }
-export async function uploadCoursePackage(payload:{file:File;classId:string;title:string;subtitle:string;sequence:number;syncAssessment:boolean}) {
-  const form=new FormData();form.append('file',payload.file);form.append('classId',payload.classId);form.append('title',payload.title);form.append('subtitle',payload.subtitle);form.append('sequence',String(payload.sequence));form.append('syncAssessment',String(payload.syncAssessment))
+export async function uploadCoursePackage(payload:{file:File;classId:string;title:string;subtitle:string;sequence:number;syncAssessment:boolean;category:string}) {
+  const form=new FormData();form.append('file',payload.file);form.append('classId',payload.classId);form.append('title',payload.title);form.append('subtitle',payload.subtitle);form.append('sequence',String(payload.sequence));form.append('syncAssessment',String(payload.syncAssessment));form.append('category',payload.category)
   return read<{ok:boolean;courseResourceId:string;assessmentResourceId:string|null;path:string;message:string}>(await fetch(`${API_BASE}/admin/course-packages`,{method:'POST',headers:await headers(false),body:form,credentials:'include'}))
 }
 export async function uploadStudentSharedFile(file:File,classId:string,purpose:'class'|'homework'='class') {
@@ -63,6 +64,12 @@ export async function generateCourseDraft(payload:{title:string;prompt:string;st
 }
 export async function getAttendance(classId:string,termId:string) {
   return read<{sessions:AttendanceSession[]}>(await fetch(`${API_BASE}/admin/attendance?class_id=${encodeURIComponent(classId)}&term_id=${encodeURIComponent(termId)}`,{headers:await headers(false),credentials:'include'}))
+}
+export async function getParentFeedback(classId:string) {
+  return read<{messages:ParentFeedbackMessage[]}>(await fetch(`${API_BASE}/admin/parent-feedback?class_id=${encodeURIComponent(classId)}`, { headers:await headers(false), credentials:'include' }))
+}
+export async function replyToParentFeedback(messageId:string,content:string) {
+  return adminAction(`/admin/parent-feedback/${encodeURIComponent(messageId)}/reply`, 'POST', { content }) as Promise<{message:ParentFeedbackMessage}>
 }
 export async function touchAttendance(classId:string) { return studentAction('/student/attendance/touch','POST',{classId}) as Promise<{checkedIn:boolean;sessionId?:string}> }
 export async function downloadAttendance(classId:string,termId:string,className:string,termName:string) {
