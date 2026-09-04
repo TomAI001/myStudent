@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-release_name="aikc-selfhosted-20260903-v2"
-release_url="https://raw.githubusercontent.com/TomAI001/myStudent/main/aikc-selfhosted-20260903-v2.zip"
-release_sha="7dea39a7e04310dfc5192bc8c023f9404cb691f81d37c863922a6999880215f3"
-release_zip="/home/ubuntu/${release_name}.zip"
+release_name="${RELEASE_NAME:-aikc-selfhosted-20260904-admission-rewards-review}"
+release_url="https://raw.githubusercontent.com/TomAI001/myStudent/main/aikc-selfhosted-20260904-admission-rewards-review.zip"
+release_sha="${RELEASE_SHA256:-}"
+release_zip="${RELEASE_ZIP_OVERRIDE:-/home/ubuntu/${release_name}.zip}"
 release_dir="$(mktemp -d "/tmp/${release_name}.XXXXXX")"
 release_root="${release_dir}/package"
 database="/var/lib/growth-journal/growth.db"
@@ -31,20 +31,31 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[1/10] 下载并校验自托管发布包"
-curl -L --fail --retry 5 --connect-timeout 15 "${release_url}" -o "${release_zip}"
-echo "${release_sha}  ${release_zip}" | sha256sum -c -
+if [[ -n "${RELEASE_ZIP_OVERRIDE:-}" ]]; then
+  test -f "${release_zip}"
+else
+  curl -L --fail --retry 5 --connect-timeout 15 "${release_url}" -o "${release_zip}"
+fi
+if [[ -n "${release_sha}" ]]; then echo "${release_sha}  ${release_zip}" | sha256sum -c -; else echo "未提供 RELEASE_SHA256，跳过校验"; fi
 unzip -q -o "${release_zip}" -d "${release_dir}"
 test -f "${release_root}/dist/index.html"
 test -f "${release_root}/server/app.py"
 test -f "${release_root}/server/core_data.py"
 test -f "${release_root}/server/portal_features.py"
+test -f "${release_root}/server/admissions_rewards.py"
 
 echo "[2/10] 检查后端程序和独立测试数据库"
+if ! command -v g++ >/dev/null 2>&1 && ! command -v clang++ >/dev/null 2>&1; then
+  echo "未检测到 C++ 编译器，安装 g++"
+  sudo apt-get update
+  sudo apt-get install -y g++
+fi
 sudo "${api_root}/venv/bin/pip" install --disable-pip-version-check -r "${release_root}/server/requirements.txt"
 "${api_root}/venv/bin/python" -m py_compile \
   "${release_root}/server/app.py" \
   "${release_root}/server/core_data.py" \
-  "${release_root}/server/portal_features.py"
+  "${release_root}/server/portal_features.py" \
+  "${release_root}/server/admissions_rewards.py"
 GROWTH_DATABASE="${release_dir}/check.db" \
 GROWTH_UPLOAD_ROOT="${release_dir}/check-uploads" \
 GROWTH_ADMIN_EMAIL="teacher@example.com" \
@@ -76,6 +87,7 @@ echo "学生账号数（发布前）：${accounts_before}"
 sudo install -m 0644 "${release_root}/server/app.py" "${api_root}/app.py"
 sudo install -m 0644 "${release_root}/server/core_data.py" "${api_root}/core_data.py"
 sudo install -m 0644 "${release_root}/server/portal_features.py" "${api_root}/portal_features.py"
+sudo install -m 0644 "${release_root}/server/admissions_rewards.py" "${api_root}/admissions_rewards.py"
 
 echo "[5/10] 将旧数据快照移出公网目录"
 sudo install -d -o root -g www-data -m 0750 "$(dirname "${legacy_seed}")"
@@ -142,8 +154,15 @@ accounts_after="$(sudo "${api_root}/venv/bin/python" -c \
   'import sqlite3; db=sqlite3.connect("/var/lib/growth-journal/growth.db"); print(db.execute("select count(*) from student_accounts").fetchone()[0])')"
 echo "学生账号数（发布后）：${accounts_after}"
 test "${accounts_before}" = "${accounts_after}"
+legacy_tables="$(sudo "${api_root}/venv/bin/python" -c \
+  'import sqlite3; db=sqlite3.connect("/var/lib/growth-journal/growth.db"); print(db.execute("select count(*) from sqlite_master where type=\"table\" and (lower(name) like \"%plaza%\" or lower(name) like \"%community%\")").fetchone()[0])')"
+legacy_resources="$(sudo "${api_root}/venv/bin/python" -c \
+  'import sqlite3; db=sqlite3.connect("/var/lib/growth-journal/growth.db"); print(db.execute("select count(*) from resource_library where id=\"community:class-square\" or kind=\"community\"").fetchone()[0])')"
+test "${legacy_tables}" = "0"
+test "${legacy_resources}" = "0"
 
 echo "[10/10] 发布完成"
 echo "全站已改用腾讯云服务器 SQLite 和本机上传目录，不再依赖 Supabase。"
 echo "教师端账号：${admin_email}"
 echo "数据库备份：${backup_file}"
+echo "旧交流广场帖子、评论、关联图片及数据库表已永久清除；发布前备份仍保留在上述路径。"
